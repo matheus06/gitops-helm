@@ -1,8 +1,8 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/matheus06/order-service
-  tag: "dev"
+  repository: ghcr.io/GITHUB_USERNAME/order-service
+  tag: "dev-306466e"
 
 resources:
   limits:
