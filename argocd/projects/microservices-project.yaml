@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: microservices
+  namespace: argocd
+spec:
+  description: Microservices Lab Project
+  sourceRepos:
+    - 'https://github.com/GITHUB_USERNAME/gitops-helm.git'
+  destinations:
+    - namespace: microservices-dev
+      server: https://kubernetes.default.svc
+    - namespace: microservices-prod
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: '*'
+    - group: 'apps'
+      kind: '*'
+    - group: 'autoscaling'
+      kind: '*'
