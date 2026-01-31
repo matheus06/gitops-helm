@@ -12,7 +12,8 @@ var products = new List<Product>
 {
     new(1, "Laptop", 999.99m, 50),
     new(2, "Mouse", 29.99m, 200),
-    new(3, "Keyboard", 79.99m, 150)
+    new(3, "Keyboard", 79.99m, 150),
+    new(4, "Monitor", 199.99m, 75)
 };
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
