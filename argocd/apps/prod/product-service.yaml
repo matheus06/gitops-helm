@@ -9,7 +9,7 @@ spec:
   project: microservices
   source:
     repoURL: https://github.com/matheus06/gitops-helm.git
-    targetRevision: main
+    targetRevision: master
     path: charts/product-service
     helm:
       valueFiles:

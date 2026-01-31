@@ -7,7 +7,7 @@ spec:
   project: microservices
   source:
     repoURL: https://github.com/matheus06/gitops-helm.git
-    targetRevision: main
+    targetRevision: master
     path: argocd/apps/prod
   destination:
     server: https://kubernetes.default.svc
