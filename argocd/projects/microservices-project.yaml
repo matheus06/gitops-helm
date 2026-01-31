@@ -8,6 +8,8 @@ spec:
   sourceRepos:
     - 'https://github.com/matheus06/gitops-helm.git'
   destinations:
+    - namespace: argocd
+      server: https://kubernetes.default.svc
     - namespace: microservices-dev
       server: https://kubernetes.default.svc
     - namespace: microservices-prod
@@ -22,3 +24,5 @@ spec:
       kind: '*'
     - group: 'autoscaling'
       kind: '*'
+    - group: 'argoproj.io'
+      kind: 'Application'
