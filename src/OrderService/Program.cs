@@ -12,7 +12,8 @@ app.UseSwaggerUI();
 var orders = new List<Order>
 {
     new(1, 101, new[] { new OrderItem(1, 2), new OrderItem(2, 1) }, OrderStatus.Completed, DateTime.UtcNow.AddDays(-5)),
-    new(2, 102, new[] { new OrderItem(3, 1) }, OrderStatus.Processing, DateTime.UtcNow.AddDays(-1))
+    new(2, 102, new[] { new OrderItem(3, 1) }, OrderStatus.Processing, DateTime.UtcNow.AddDays(-1)),
+    new(3, 103, new[] { new OrderItem(4, 3), new OrderItem(5, 2) }, OrderStatus.Pending, DateTime.UtcNow.AddDays(-2))
 };
 
 var nextId = 3;
