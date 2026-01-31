@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/GITHUB_USERNAME/product-service
-  tag: "dev"
+  tag: "dev-97e4d61"
 
 resources:
   limits:
