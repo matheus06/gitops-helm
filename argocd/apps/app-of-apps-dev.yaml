@@ -6,7 +6,7 @@ metadata:
 spec:
   project: microservices
   source:
-    repoURL: https://github.com/GITHUB_USERNAME/gitops-helm.git
+    repoURL: https://github.com/matheus06/gitops-helm.git
     targetRevision: main
     path: argocd/apps/dev
   destination:

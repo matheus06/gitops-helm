@@ -6,7 +6,7 @@ metadata:
 spec:
   description: Microservices Lab Project
   sourceRepos:
-    - 'https://github.com/GITHUB_USERNAME/gitops-helm.git'
+    - 'https://github.com/matheus06/gitops-helm.git'
   destinations:
     - namespace: microservices-dev
       server: https://kubernetes.default.svc

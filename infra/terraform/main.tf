@@ -10,10 +10,10 @@ terraform {
 
   backend "azurerm" {
     # Configure your backend here or use -backend-config
-    # resource_group_name  = "tfstate-rg"
-    # storage_account_name = "tfstateaccount"
-    # container_name       = "tfstate"
-    # key                  = "gitops-helm.tfstate"
+    resource_group_name  = "matheus-shared-rg"
+    storage_account_name = "matheussharedstorageacc"
+    container_name       = "tfstate"
+    key                  = "gitops-helm.tfstate"
   }
 }
 
