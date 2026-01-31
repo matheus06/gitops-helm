@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/matheus06/product-service
-  tag: "dev-306466e"
+  tag: "dev-24c5978"
 
 resources:
   limits:
