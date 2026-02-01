@@ -20,9 +20,6 @@ ssh user@your-ubuntu-server
 git clone https://github.com/matheus06/gitops-helm.git
 cd gitops-helm
 
-# Checkout the ubuntu environment branch
-git checkout feature/ubuntu-environment
-
 # Make scripts executable
 chmod +x infra/scripts/*.sh
 
@@ -32,14 +29,21 @@ sudo ./infra/scripts/setup-microk8s-ubuntu.sh
 
 Log out and log back in for group permissions to take effect.
 
-### 2. Install ArgoCD
+### 2. Enable Required Addons
+
+```bash
+# Enable ingress controller for routing
+microk8s enable ingress
+```
+
+### 3. Install ArgoCD
 
 ```bash
 cd ~/gitops-helm/infra/scripts
 ./install-argocd-microk8s.sh
 ```
 
-### 3. Deploy the Ubuntu Environment
+### 4. Deploy the Ubuntu Environment
 
 ```bash
 ./setup-argocd-apps-ubuntu.sh
@@ -47,47 +51,58 @@ cd ~/gitops-helm/infra/scripts
 
 ## Accessing the Services
 
-### Service Type: NodePort
+### Ingress Setup
 
-The Ubuntu environment uses **NodePort** services, which expose the APIs directly on the server's IP address without requiring port-forward commands.
+The Ubuntu environment uses **Ingress** to route traffic to services using hostnames instead of random ports.
 
-### Get the Service Ports
+| Service | Hostname | URL |
+|---------|----------|-----|
+| Product Service | `product.local` | `http://product.local/api/products` |
+| Order Service | `order.local` | `http://order.local/api/orders` |
+
+### Configure Hosts File
+
+Add your Ubuntu server's IP to your hosts file:
+
+**Windows** (`C:\Windows\System32\drivers\etc\hosts`):
+```
+192.168.129.147  product.local order.local
+```
+
+**Linux/Mac** (`/etc/hosts`):
+```
+192.168.129.147  product.local order.local
+```
+
+Replace `192.168.129.147` with your Ubuntu server's actual IP address.
+
+### Test the APIs
 
 ```bash
-microk8s kubectl get svc -n microservices-ubuntu
+# From any machine with hosts file configured
+curl http://product.local/api/products
+curl http://order.local/api/orders
 ```
 
-Example output:
-```
-NAME                     TYPE       CLUSTER-IP       PORT(S)        AGE
-product-service-ubuntu   NodePort   10.152.183.100   80:31234/TCP   10m
-order-service-ubuntu     NodePort   10.152.183.101   80:31567/TCP   10m
-```
+### Verify Ingress is Working
 
-The NodePort is the second port number (e.g., `31234`, `31567`).
-
-### Access the APIs
-
-Replace `<SERVER_IP>` with your Ubuntu server's IP address and `<NODEPORT>` with the port from the command above:
-
-| Service | URL |
-|---------|-----|
-| Product Service | `http://<SERVER_IP>:<NODEPORT>/api/products` |
-| Order Service | `http://<SERVER_IP>:<NODEPORT>/api/orders` |
-
-Example:
 ```bash
-# From any machine on the network
-curl http://192.168.129.147:31234/api/products
-curl http://192.168.129.147:31567/api/orders
+# Check ingress resources
+microk8s kubectl get ingress -n microservices-ubuntu
+
+# Check ingress controller pods
+microk8s kubectl get pods -n ingress
 ```
 
 ## Accessing ArgoCD UI
 
-ArgoCD is also exposed via NodePort:
+Expose ArgoCD via NodePort:
 
 ```bash
-# Get ArgoCD server port
+# Patch ArgoCD to use NodePort
+microk8s kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "NodePort"}}'
+
+# Get the assigned port
 microk8s kubectl get svc argocd-server -n argocd
 ```
 
@@ -101,6 +116,71 @@ microk8s kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{
 
 - **Username:** admin
 - **Password:** (output from command above)
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      Ubuntu Server                            │
+│                                                               │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │                     MicroK8s                          │    │
+│  │                                                       │    │
+│  │  ┌─────────────────────────────────────────────────┐ │    │
+│  │  │            Ingress Controller (nginx)           │ │    │
+│  │  │                    :80                          │ │    │
+│  │  └──────────────┬─────────────────┬────────────────┘ │    │
+│  │                 │                 │                   │    │
+│  │    product.local│     order.local │                   │    │
+│  │                 ▼                 ▼                   │    │
+│  │  ┌──────────────────┐  ┌──────────────────┐          │    │
+│  │  │  product-service │  │   order-service  │          │    │
+│  │  │   (ClusterIP)    │  │   (ClusterIP)    │          │    │
+│  │  └──────────────────┘  └──────────────────┘          │    │
+│  │                                                       │    │
+│  │  Namespace: microservices-ubuntu                     │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                               │
+└───────────────────────────┬───────────────────────────────────┘
+                            │ :80
+                            ▼
+                 ┌─────────────────────┐
+                 │   Your Network/LAN  │
+                 │  (via hosts file)   │
+                 └─────────────────────┘
+```
+
+## Differences from Dev/Prod Environments
+
+| Aspect | Dev/Prod (AKS) | Ubuntu (MicroK8s) |
+|--------|----------------|-------------------|
+| Cluster | Azure AKS | Local MicroK8s |
+| Service Type | ClusterIP | ClusterIP |
+| External Access | Port-forward | Ingress |
+| Ingress Class | nginx | nginx |
+| Resources | Higher limits | Lower limits (200m CPU, 128Mi RAM) |
+| Use Case | Cloud deployment | Local development/testing |
+
+## ArgoCD Project Configuration
+
+The ArgoCD project must whitelist Kubernetes resource types it can manage:
+
+```yaml
+# argocd/projects/microservices-project.yaml
+namespaceResourceWhitelist:
+  - group: ''                    # Core: Pod, Service, ConfigMap, Secret
+    kind: '*'
+  - group: 'apps'                # Deployment, StatefulSet, ReplicaSet
+    kind: '*'
+  - group: 'autoscaling'         # HorizontalPodAutoscaler
+    kind: '*'
+  - group: 'networking.k8s.io'   # Ingress, NetworkPolicy
+    kind: '*'
+  - group: 'argoproj.io'         # ArgoCD Application
+    kind: 'Application'
+```
+
+If ArgoCD fails to sync with "resource not allowed" errors, check this whitelist.
 
 ## Useful Commands
 
@@ -117,10 +197,23 @@ microk8s kubectl logs -n microservices-ubuntu deploy/product-service-ubuntu
 microk8s kubectl logs -n microservices-ubuntu deploy/order-service-ubuntu
 ```
 
+### Check Ingress Status
+
+```bash
+microk8s kubectl get ingress -n microservices-ubuntu
+microk8s kubectl describe ingress -n microservices-ubuntu
+```
+
 ### Check ArgoCD Sync Status
 
 ```bash
 microk8s kubectl get applications -n argocd
+```
+
+### Force ArgoCD Sync
+
+```bash
+microk8s kubectl -n argocd patch app order-service-ubuntu --type merge -p '{"operation": {"initiatedBy": {"username": "admin"}, "sync": {"prune": true}}}'
 ```
 
 ### Restart a Deployment
@@ -129,45 +222,20 @@ microk8s kubectl get applications -n argocd
 microk8s kubectl rollout restart deploy/product-service-ubuntu -n microservices-ubuntu
 ```
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Ubuntu Server                        │
-│                                                         │
-│   ┌─────────────────────────────────────────────────┐   │
-│   │                  MicroK8s                       │   │
-│   │                                                 │   │
-│   │   Namespace: microservices-ubuntu               │   │
-│   │   ┌─────────────────┐  ┌─────────────────┐      │   │
-│   │   │ product-service │  │  order-service  │      │   │
-│   │   │   (NodePort)    │  │   (NodePort)    │      │   │
-│   │   └────────┬────────┘  └────────┬────────┘      │   │
-│   │            │                    │               │   │
-│   └────────────┼────────────────────┼───────────────┘   │
-│                │                    │                   │
-└────────────────┼────────────────────┼───────────────────┘
-                 │                    │
-         :31234 (example)     :31567 (example)
-                 │                    │
-                 ▼                    ▼
-         ┌─────────────────────────────────┐
-         │        Your Network/LAN         │
-         │   (Access from any device)      │
-         └─────────────────────────────────┘
-```
-
-## Differences from Dev/Prod Environments
-
-| Aspect | Dev/Prod (AKS) | Ubuntu (MicroK8s) |
-|--------|----------------|-------------------|
-| Cluster | Azure AKS | Local MicroK8s |
-| Service Type | ClusterIP | NodePort |
-| Access | Port-forward or Ingress | Direct via NodePort |
-| Resources | Higher limits | Lower limits (200m CPU, 128Mi RAM) |
-| Use Case | Cloud deployment | Local development/testing |
-
 ## Troubleshooting
+
+### Ingress not routing traffic
+
+```bash
+# Check ingress controller is running
+microk8s kubectl get pods -n ingress
+
+# Check ingress resource has an address
+microk8s kubectl get ingress -n microservices-ubuntu
+
+# Check ingress controller logs
+microk8s kubectl logs -n ingress -l name=nginx-ingress-microk8s
+```
 
 ### Pods not starting
 
@@ -179,14 +247,18 @@ microk8s kubectl describe pod -n microservices-ubuntu <pod-name>
 microk8s kubectl get events -n microservices-ubuntu
 ```
 
+### ArgoCD sync fails with "resource not allowed"
+
+The ArgoCD project needs to whitelist the resource type. Update `argocd/projects/microservices-project.yaml` and add the missing group to `namespaceResourceWhitelist`.
+
 ### ArgoCD not syncing
 
 ```bash
 # Check application status
 microk8s kubectl get applications -n argocd
 
-# Force sync
-microk8s kubectl -n argocd patch app microservices-ubuntu --type merge -p '{"operation": {"initiatedBy": {"username": "admin"}, "sync": {}}}'
+# Check app details
+microk8s kubectl describe application <app-name> -n argocd
 ```
 
 ### MicroK8s not running

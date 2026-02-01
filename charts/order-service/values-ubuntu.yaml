@@ -29,3 +29,8 @@ env:
     value: "Development"
   - name: ProductServiceUrl
     value: "http://product-service:80"
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: "http://otel-collector:4317"
+
+metrics:
+  enabled: false

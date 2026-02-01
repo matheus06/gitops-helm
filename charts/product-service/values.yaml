@@ -57,3 +57,7 @@ tolerations: []
 affinity: {}
 
 env: []
+
+metrics:
+  enabled: false
+  interval: 30s

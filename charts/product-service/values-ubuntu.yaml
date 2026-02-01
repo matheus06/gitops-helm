@@ -27,3 +27,8 @@ resources:
 env:
   - name: ASPNETCORE_ENVIRONMENT
     value: "Development"
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: "http://otel-collector:4317"
+
+metrics:
+  enabled: false

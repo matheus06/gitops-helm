@@ -59,3 +59,7 @@ affinity: {}
 env: []
 
 productServiceUrl: "http://product-service:80"
+
+metrics:
+  enabled: false
+  interval: 30s
