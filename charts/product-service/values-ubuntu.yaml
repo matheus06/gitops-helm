@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/matheus06/product-service
-  tag: "dev-7279efd"
+  tag: "dev-256b15a"
 
 service:
   type: ClusterIP
