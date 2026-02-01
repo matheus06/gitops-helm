@@ -38,51 +38,20 @@ A lab environment demonstrating GitOps with ArgoCD, Helm, and .NET microservices
 
 ## Quick Start
 
-### 1. Fork and Clone
-
-1. Fork this repository to your GitHub account
-2. Clone it locally:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/gitops-helm.git
-   cd gitops-helm
-   ```
-
-### 2. Update GitHub Username
-
-Replace `GITHUB_USERNAME` with your actual GitHub username in all files:
-
-```bash
-# Linux/Mac
-find . -type f \( -name "*.yaml" -o -name "*.yml" \) -exec sed -i 's/GITHUB_USERNAME/your-username/g' {} \;
-
-# Windows PowerShell
-Get-ChildItem -Recurse -Include *.yaml,*.yml | ForEach-Object {
-    (Get-Content $_.FullName) -replace 'GITHUB_USERNAME', 'your-username' | Set-Content $_.FullName
-}
-```
-
-### 3. Create AKS Cluster
+### 1. Create AKS Cluster
 
 ```bash
 cd infra/terraform
-
-# Copy and customize variables
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-
-# Initialize and apply
-terraform init
-terraform plan
 terraform apply
 ```
 
-### 4. Configure kubectl
+### 2. Configure kubectl
 
 ```bash
 az aks get-credentials --resource-group gitops-helm-rg --name gitops-helm-aks
 ```
 
-### 5. Install ArgoCD
+### 3. Install ArgoCD
 
 ```bash
 cd infra/scripts
@@ -90,7 +59,7 @@ chmod +x install-argocd.sh
 ./install-argocd.sh
 ```
 
-### 6. Access ArgoCD UI
+### 4. Access ArgoCD UI
 
 ```bash
 kubectl port-forward svc/argocd-server -n argocd 8080:443
@@ -100,11 +69,11 @@ Open https://localhost:8080 and login with:
 - Username: `admin`
 - Password: (output from install script)
 
-### 7. Deploy Applications
+### 5. Deploy Applications
 
 ```bash
 chmod +x setup-argocd-apps.sh
-./setup-argocd-apps.sh your-github-username
+./setup-argocd-apps.sh
 ```
 
 ## Project Structure
@@ -242,6 +211,26 @@ kubectl delete namespace microservices-dev microservices-prod
 cd infra/terraform
 terraform destroy
 ```
+
+## Combined Benefits of Helm and ArgoCD
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │                     Developer pushes code                    │
+  └─────────────────────────────┬───────────────────────────────┘
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │  HELM: Generates K8s manifests from templates + values      │
+  │  - Same template → different configs per environment        │
+  │  - Easy to update image tags, replicas, resources           │
+  └─────────────────────────────┬───────────────────────────────┘
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │  ARGOCD: Syncs Git state to Kubernetes                       │
+  │  - Automatic deployments                                     │
+  │  - Self-healing                                              │
+  │  - Rollback capability                                       │
+  │  - Audit trail                                               │
+  └─────────────────────────────────────────────────────────────┘
 
 ## Understanding Helm Structure
 
@@ -416,6 +405,70 @@ Developer pushes code
 | **Prune** | ArgoCD deletes resources removed from Git |
 
 This structure keeps your environments consistent and auditable - every change goes through Git.
+
+---
+
+## HPA - Horizontal Pod Autoscaler
+
+HPA automatically scales the number of pods based on resource usage (CPU/memory).
+
+### How It Works
+
+```
+                    ┌─────────────────────────────┐
+                    │      HPA Controller         │
+                    │  Monitors: CPU usage        │
+                    │  Target: 70%                │
+                    └──────────────┬──────────────┘
+                                   │
+            ┌──────────────────────┼──────────────────────┐
+            │                      │                      │
+            ▼                      ▼                      ▼
+    CPU: 80% (high)         CPU: 75% (high)         CPU: 20% (low)
+    ┌─────────┐             ┌─────────┐             ┌─────────┐
+    │  Pod 1  │             │  Pod 2  │             │  Pod 3  │
+    └─────────┘             └─────────┘             └─────────┘
+            │                                              │
+            ▼                                              ▼
+    HPA adds more pods                           HPA removes pods
+    (scale up)                                   (scale down)
+```
+
+### Environment Configuration
+
+| Environment | Replicas | HPA | Min/Max Pods |
+|-------------|----------|-----|--------------|
+| Dev | 1 (fixed) | Off | - |
+| Prod | 3+ | On | 3-10 pods |
+
+### Config in values-prod.yaml
+
+```yaml
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70  # Scale up when CPU > 70%
+```
+
+### Check HPA Status
+
+```bash
+# View HPA
+kubectl get hpa -n microservices-prod
+
+# Detailed view
+kubectl describe hpa product-service -n microservices-prod
+```
+
+### Example Output
+
+```
+NAME              REFERENCE                    TARGETS   MINPODS   MAXPODS   REPLICAS
+product-service   Deployment/product-service   25%/70%   3         10        3
+```
+
+This means: CPU is at 25%, target is 70%, so no scaling needed. Currently running 3 pods.
 
 ## License
 
