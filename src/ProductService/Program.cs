@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -10,6 +11,11 @@ builder.Services.AddSwaggerGen();
 var otelEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ?? "http://otel-collector:4317";
 var serviceName = "product-service";
 
+// Custom metrics
+var meter = new Meter(serviceName, "1.0.0");
+var productRequestCounter = meter.CreateCounter<long>("product_requests_total", description: "Total number of product API requests");
+var productViewCounter = meter.CreateCounter<long>("product_views_total", description: "Total number of individual product views");
+
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource.AddService(serviceName))
     .WithTracing(tracing => tracing
@@ -17,6 +23,7 @@ builder.Services.AddOpenTelemetry()
         .AddHttpClientInstrumentation()
         .AddOtlpExporter(options => options.Endpoint = new Uri(otelEndpoint)))
     .WithMetrics(metrics => metrics
+        .AddMeter(serviceName)
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
         .AddOtlpExporter(options => options.Endpoint = new Uri(otelEndpoint)));
@@ -38,10 +45,16 @@ app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "ProductService" }));
 
-app.MapGet("/api/products", () => products);
+app.MapGet("/api/products", () =>
+{
+    productRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "list"));
+    return products;
+});
 
 app.MapGet("/api/products/{id}", (int id) =>
 {
+    productRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "get"));
+    productViewCounter.Add(1, new KeyValuePair<string, object?>("product_id", id.ToString()));
     var product = products.FirstOrDefault(p => p.Id == id);
     return product is not null ? Results.Ok(product) : Results.NotFound();
 });

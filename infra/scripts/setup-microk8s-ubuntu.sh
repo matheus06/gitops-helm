@@ -29,6 +29,8 @@ echo "Enabling required addons..."
 microk8s enable dns
 microk8s enable storage
 microk8s enable helm3
+microk8s enable obeservability
+microk8s enable ingress
 
 echo ""
 echo "============================================"

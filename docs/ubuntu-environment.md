@@ -29,21 +29,14 @@ sudo ./infra/scripts/setup-microk8s-ubuntu.sh
 
 Log out and log back in for group permissions to take effect.
 
-### 2. Enable Required Addons
-
-```bash
-# Enable ingress controller for routing
-microk8s enable ingress
-```
-
-### 3. Install ArgoCD
+### 2. Install ArgoCD
 
 ```bash
 cd ~/gitops-helm/infra/scripts
 ./install-argocd-microk8s.sh
 ```
 
-### 4. Deploy the Ubuntu Environment
+### 3. Deploy the Ubuntu Environment
 
 ```bash
 ./setup-argocd-apps-ubuntu.sh
@@ -117,31 +110,52 @@ microk8s kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{
 - **Username:** admin
 - **Password:** (output from command above)
 
+## Accessing Grafana UI
+
+Expose Grafana via NodePort:
+
+```bash
+# Patch Grafana to use NodePort
+microk8s kubectl patch svc kube-prom-stack-grafana -n observability -p '{"spec": {"type": "NodePort"}}'
+
+# Get the assigned port
+microk8s kubectl get svc kube-prom-stack-grafana -n observability
+
+# Get credentials
+microk8s kubectl get secret -n observability kube-prom-stack-grafana -o jsonpath="{.data.admin-user}" | base64 -d
+echo ""
+microk8s kubectl get secret -n observability kube-prom-stack-grafana -o jsonpath="{.data.admin-password}" | base64 -d
+echo ""
+
+```
+
+Access at: `https://<SERVER_IP>:<NODEPORT>`
+
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                      Ubuntu Server                            │
-│                                                               │
+│                      Ubuntu Server                           │
+│                                                              │
 │  ┌──────────────────────────────────────────────────────┐    │
-│  │                     MicroK8s                          │    │
-│  │                                                       │    │
+│  │                     MicroK8s                         │    │
+│  │                                                      │    │
 │  │  ┌─────────────────────────────────────────────────┐ │    │
 │  │  │            Ingress Controller (nginx)           │ │    │
 │  │  │                    :80                          │ │    │
 │  │  └──────────────┬─────────────────┬────────────────┘ │    │
-│  │                 │                 │                   │    │
-│  │    product.local│     order.local │                   │    │
-│  │                 ▼                 ▼                   │    │
+│  │                 │                 │                  │    │
+│  │    product.local│     order.local │                  │    │
+│  │                 ▼                 ▼                  │    │
 │  │  ┌──────────────────┐  ┌──────────────────┐          │    │
 │  │  │  product-service │  │   order-service  │          │    │
 │  │  │   (ClusterIP)    │  │   (ClusterIP)    │          │    │
 │  │  └──────────────────┘  └──────────────────┘          │    │
-│  │                                                       │    │
+│  │                                                      │    │
 │  │  Namespace: microservices-ubuntu                     │    │
 │  └──────────────────────────────────────────────────────┘    │
-│                                                               │
-└───────────────────────────┬───────────────────────────────────┘
+│                                                              │
+└───────────────────────────┬──────────────────────────────────┘
                             │ :80
                             ▼
                  ┌─────────────────────┐

@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -11,6 +12,11 @@ builder.Services.AddHttpClient();
 var otelEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ?? "http://otel-collector:4317";
 var serviceName = "order-service";
 
+// Custom metrics
+var meter = new Meter(serviceName, "1.0.0");
+var orderRequestCounter = meter.CreateCounter<long>("order_requests_total", description: "Total number of order API requests");
+var ordersCreatedCounter = meter.CreateCounter<long>("orders_created_total", description: "Total number of orders created");
+
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource.AddService(serviceName))
     .WithTracing(tracing => tracing
@@ -18,6 +24,7 @@ builder.Services.AddOpenTelemetry()
         .AddHttpClientInstrumentation()
         .AddOtlpExporter(options => options.Endpoint = new Uri(otelEndpoint)))
     .WithMetrics(metrics => metrics
+        .AddMeter(serviceName)
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
         .AddOtlpExporter(options => options.Endpoint = new Uri(otelEndpoint)));
@@ -40,10 +47,15 @@ app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "OrderService" }));
 
-app.MapGet("/api/orders", () => orders);
+app.MapGet("/api/orders", () =>
+{
+    orderRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "list"));
+    return orders;
+});
 
 app.MapGet("/api/orders/{id}", (int id) =>
 {
+    orderRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "get"));
     var order = orders.FirstOrDefault(o => o.Id == id);
     return order is not null ? Results.Ok(order) : Results.NotFound();
 });
@@ -56,6 +68,8 @@ app.MapGet("/api/orders/customer/{customerId}", (int customerId) =>
 
 app.MapPost("/api/orders", (CreateOrderRequest request) =>
 {
+    orderRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "create"));
+    ordersCreatedCounter.Add(1);
     var order = new Order(nextId++, request.CustomerId, request.Items, OrderStatus.Pending, DateTime.UtcNow);
     orders.Add(order);
     return Results.Created($"/api/orders/{order.Id}", order);
