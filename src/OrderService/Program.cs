@@ -39,6 +39,7 @@ builder.Logging.AddOpenTelemetry(logging =>
 });
 
 var app = builder.Build();
+var logger = app.Logger;
 
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -58,12 +59,15 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "Orde
 
 app.MapGet("/api/orders", () =>
 {
+    logger.LogInformation("Fetching all orders");
     orderRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "list"));
     return orders;
 });
 
 app.MapGet("/api/orders/{id}", (int id) =>
 {
+
+    logger.LogInformation("Fetching  order with ID {OrderId}", id);
     orderRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "get"));
     var order = orders.FirstOrDefault(o => o.Id == id);
     return order is not null ? Results.Ok(order) : Results.NotFound();

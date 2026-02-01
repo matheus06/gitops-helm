@@ -38,6 +38,7 @@ builder.Logging.AddOpenTelemetry(logging =>
 });
 
 var app = builder.Build();
+var logger = app.Logger;
 
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -56,12 +57,14 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "Prod
 
 app.MapGet("/api/products", () =>
 {
+    logger.LogInformation("Fetching all products");
     productRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "list"));
     return products;
 });
 
 app.MapGet("/api/products/{id}", (int id) =>
 {
+    logger.LogInformation("Fetching product with ID {ProductId}", id);
     productRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "get"));
     productViewCounter.Add(1, new KeyValuePair<string, object?>("product_id", id.ToString()));
     var product = products.FirstOrDefault(p => p.Id == id);
