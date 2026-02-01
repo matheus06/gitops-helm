@@ -21,10 +21,11 @@ git clone https://github.com/matheus06/gitops-helm.git
 cd gitops-helm
 
 # Make scripts executable
-chmod +x infra/scripts/*.sh
+chmod +x infra/scripts/local-ubuntu/*.sh
 
 # Install MicroK8s
-sudo ./infra/scripts/setup-microk8s-ubuntu.sh
+cd ~/gitops-helm/infra/scripts/local-ubuntu
+sudo ./setup-microk8s-ubuntu.sh
 ```
 
 Log out and log back in for group permissions to take effect.
@@ -32,14 +33,13 @@ Log out and log back in for group permissions to take effect.
 ### 2. Install ArgoCD
 
 ```bash
-cd ~/gitops-helm/infra/scripts
-./install-argocd-microk8s.sh
+sudo ./install-argocd-microk8s.sh
 ```
 
 ### 3. Deploy the Ubuntu Environment
 
 ```bash
-./setup-argocd-apps-ubuntu.sh
+sudo ./setup-argocd-apps-ubuntu.sh
 ```
 
 ## Accessing the Services
@@ -59,16 +59,8 @@ Add your Ubuntu server's IP to your hosts file:
 
 **Windows** (`C:\Windows\System32\drivers\etc\hosts`):
 ```
-192.168.129.147  product.local order.local
+ubuntu-machine-ip  product.local order.local
 ```
-
-**Linux/Mac** (`/etc/hosts`):
-```
-192.168.129.147  product.local order.local
-```
-
-Replace `192.168.129.147` with your Ubuntu server's actual IP address.
-
 ### Test the APIs
 
 ```bash

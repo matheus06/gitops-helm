@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -27,6 +28,14 @@ builder.Services.AddOpenTelemetry()
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
         .AddOtlpExporter(options => options.Endpoint = new Uri(otelEndpoint)));
+
+builder.Logging.AddOpenTelemetry(logging =>
+{
+    logging.SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName));
+    logging.IncludeScopes = true;
+    logging.IncludeFormattedMessage = true;
+    logging.AddOtlpExporter(options => options.Endpoint = new Uri(otelEndpoint));
+});
 
 var app = builder.Build();
 

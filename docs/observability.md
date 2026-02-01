@@ -16,7 +16,7 @@ Observability is built on three pillars:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Microservices                               │
+│                      Microservices                              │
 │  ┌─────────────────┐              ┌─────────────────┐           │
 │  │ product-service │              │  order-service  │           │
 │  │                 │              │                 │           │
@@ -148,22 +148,22 @@ OpenTelemetry is a vendor-neutral standard for collecting telemetry data.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Application                               │
+│                    Application                              │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │              OpenTelemetry SDK                       │    │
-│  │                                                      │    │
+│  │              OpenTelemetry SDK                      │    │
+│  │                                                     │    │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌───────────┐  │    │
 │  │  │ Trace API    │  │ Metrics API  │  │ Logs API  │  │    │
 │  │  └──────────────┘  └──────────────┘  └───────────┘  │    │
-│  │                                                      │    │
+│  │                                                     │    │
 │  │  ┌──────────────────────────────────────────────┐   │    │
-│  │  │         Auto-Instrumentation                  │   │    │
+│  │  │         Auto-Instrumentation                 │   │    │
 │  │  │  (ASP.NET Core, HttpClient, etc.)            │   │    │
 │  │  └──────────────────────────────────────────────┘   │    │
-│  │                                                      │    │
+│  │                                                     │    │
 │  │  ┌──────────────────────────────────────────────┐   │    │
-│  │  │         OTLP Exporter                         │   │    │
-│  │  │  (sends data to OTel Collector)              │   │    │
+│  │  │              OTLP Exporter                   │   │    │
+│  │  │      (sends data to OTel Collector)          │   │    │
 │  │  └──────────────────────────────────────────────┘   │    │
 │  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
