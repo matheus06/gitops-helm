@@ -4,6 +4,9 @@ image:
   repository: ghcr.io/matheus06/order-service
   tag: "dev-24c5978"
 
+service:
+  type: NodePort
+
 resources:
   limits:
     cpu: 200m
