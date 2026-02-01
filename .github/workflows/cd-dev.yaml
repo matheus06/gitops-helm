@@ -94,15 +94,17 @@ jobs:
       - name: Update Product Service image tag
         run: |
           sed -i "s|tag: \"dev.*\"|tag: \"dev-${GITHUB_SHA::7}\"|" charts/product-service/values-dev.yaml
+          sed -i "s|tag: \"dev.*\"|tag: \"dev-${GITHUB_SHA::7}\"|" charts/product-service/values-ubuntu.yaml
 
       - name: Update Order Service image tag
         run: |
           sed -i "s|tag: \"dev.*\"|tag: \"dev-${GITHUB_SHA::7}\"|" charts/order-service/values-dev.yaml
+          sed -i "s|tag: \"dev.*\"|tag: \"dev-${GITHUB_SHA::7}\"|" charts/order-service/values-ubuntu.yaml
 
       - name: Commit and push
         run: |
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'actions@github.com'
-          git add charts/*/values-dev.yaml
+          git add charts/*/values-dev.yaml charts/*/values-ubuntu.yaml
           git diff --staged --quiet || git commit -m "chore: update dev image tags to dev-${GITHUB_SHA::7}"
           git push
