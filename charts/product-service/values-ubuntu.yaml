@@ -5,7 +5,16 @@ image:
   tag: "dev-24c5978"
 
 service:
-  type: NodePort
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: product.local
+      paths:
+        - path: /
+          pathType: Prefix
 
 resources:
   limits:
