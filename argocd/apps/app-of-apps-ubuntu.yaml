@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: microservices-ubuntu
+  namespace: argocd
+spec:
+  project: microservices
+  source:
+    repoURL: https://github.com/matheus06/gitops-helm.git
+    targetRevision: master
+    path: argocd/apps/ubuntu
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

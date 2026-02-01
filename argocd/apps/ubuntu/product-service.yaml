@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: product-service-ubuntu
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: microservices
+  source:
+    repoURL: https://github.com/matheus06/gitops-helm.git
+    targetRevision: master
+    path: charts/product-service
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-ubuntu.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: microservices-ubuntu
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
