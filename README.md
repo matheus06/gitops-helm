@@ -214,8 +214,9 @@ terraform destroy
 
 ## Combined Benefits of Helm and ArgoCD
 
+```
   ┌─────────────────────────────────────────────────────────────┐
-  │                     Developer pushes code                    │
+  │                     Developer pushes code                   │
   └─────────────────────────────┬───────────────────────────────┘
                                 ▼
   ┌─────────────────────────────────────────────────────────────┐
@@ -225,12 +226,13 @@ terraform destroy
   └─────────────────────────────┬───────────────────────────────┘
                                 ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  ARGOCD: Syncs Git state to Kubernetes                       │
-  │  - Automatic deployments                                     │
-  │  - Self-healing                                              │
-  │  - Rollback capability                                       │
-  │  - Audit trail                                               │
+  │  ARGOCD: Syncs Git state to Kubernetes                      │
+  │  - Automatic deployments                                    │
+  │  - Self-healing                                             │
+  │  - Rollback capability                                      │
+  │  - Audit trail                                              │
   └─────────────────────────────────────────────────────────────┘
+  ```
 
 ## Understanding Helm Structure
 
