@@ -16,14 +16,14 @@ spec:
         app.kubernetes.io/name: {{ include "vault-config.name" . }}-init
     spec:
       restartPolicy: OnFailure
-      serviceAccountName: {{ .Release.Name }}-vault
+      serviceAccountName: {{ .Release.Name }}
       containers:
         - name: vault-init
           image: hashicorp/vault:1.15.0
           command: ["/bin/sh", "/scripts/init.sh"]
           env:
             - name: VAULT_ADDR
-              value: "http://{{ .Release.Name }}-vault:8200"
+              value: "http://{{ .Release.Name }}:8200"
             - name: VAULT_TOKEN
               value: "root"
           volumeMounts:
