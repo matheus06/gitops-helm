@@ -44,7 +44,7 @@ spec:
           livenessProbe:
             exec:
               command:
-                - mongosh
+                - {{ .Values.shell | default "mongosh" }}
                 - --eval
                 - "db.adminCommand('ping')"
             initialDelaySeconds: 30
@@ -53,7 +53,7 @@ spec:
           readinessProbe:
             exec:
               command:
-                - mongosh
+                - {{ .Values.shell | default "mongosh" }}
                 - --eval
                 - "db.adminCommand('ping')"
             initialDelaySeconds: 5

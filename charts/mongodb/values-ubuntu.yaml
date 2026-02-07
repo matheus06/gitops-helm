@@ -1,6 +1,9 @@
 image:
   tag: "4.4"
 
+# MongoDB 4.4 uses 'mongo' shell, not 'mongosh' (5.0+)
+shell: mongo
+
 auth:
   rootPassword: local-dev-password
 
