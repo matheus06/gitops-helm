@@ -30,6 +30,8 @@ spec:
       kind: '*'
     - group: 'apps'
       kind: '*'
+    - group: 'batch'
+      kind: '*'
     - group: 'autoscaling'
       kind: '*'
     - group: 'networking.k8s.io'
