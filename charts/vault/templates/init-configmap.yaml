@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vault-config.fullname" . }}-init
+  labels:
+    {{- include "vault-config.labels" . | nindent 4 }}
+data:
+  init.sh: |
+    #!/bin/sh
+    set -e
+
+    echo "Waiting for Vault to be ready..."
+    until vault status 2>/dev/null; do
+      echo "Vault is not ready yet, waiting..."
+      sleep 5
+    done
+
+    echo "Vault is ready, configuring..."
+
+    # Enable Database secrets engine
+    vault secrets enable -path=database database 2>/dev/null || echo "Database secrets engine already enabled"
+
+    # Wait for MongoDB to be ready
+    echo "Waiting for MongoDB to be ready..."
+    until nc -z {{ .Values.mongodb.host }} {{ .Values.mongodb.port }} 2>/dev/null; do
+      echo "MongoDB is not ready yet, waiting..."
+      sleep 5
+    done
+    echo "MongoDB is ready"
+
+    # Configure MongoDB connection
+    vault write database/config/mongodb \
+      plugin_name=mongodb-database-plugin \
+      allowed_roles="microservices-role" \
+      connection_url="mongodb://{{ `{{username}}` }}:{{ `{{password}}` }}@{{ .Values.mongodb.host }}:{{ .Values.mongodb.port }}/admin" \
+      username="{{ .Values.mongodb.username }}" \
+      password="{{ .Values.mongodb.password }}"
+
+    echo "MongoDB database connection configured"
+
+    # Create dynamic credentials role with 1h lease
+    vault write database/roles/microservices-role \
+      db_name=mongodb \
+      creation_statements='{ "db": "{{ .Values.mongodb.database }}", "roles": [{ "role": "readWrite" }] }' \
+      default_ttl="1h" \
+      max_ttl="24h"
+
+    echo "Database role created with 1h lease"
+
+    # Enable Kubernetes auth
+    vault auth enable kubernetes 2>/dev/null || echo "Kubernetes auth already enabled"
+
+    # Configure Kubernetes auth
+    vault write auth/kubernetes/config \
+      kubernetes_host="https://${KUBERNETES_PORT_443_TCP_ADDR}:443"
+
+    echo "Kubernetes auth configured"
+
+    # Create policy for microservices with database credentials access
+    vault policy write microservices - <<EOF
+    path "database/creds/microservices-role" {
+      capabilities = ["read"]
+    }
+    EOF
+
+    echo "Microservices policy created"
+
+    # Create role for product-service
+    vault write auth/kubernetes/role/product-service \
+      bound_service_account_names=product-service,default \
+      bound_service_account_namespaces={{ .Release.Namespace }} \
+      policies=microservices \
+      ttl=1h
+
+    # Create role for order-service
+    vault write auth/kubernetes/role/order-service \
+      bound_service_account_names=order-service,default \
+      bound_service_account_namespaces={{ .Release.Namespace }} \
+      policies=microservices \
+      ttl=1h
+
+    echo "Service roles created"
+    echo "Vault initialization complete!"

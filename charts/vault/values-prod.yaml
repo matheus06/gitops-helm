@@ -1,0 +1,71 @@
+vault:
+  server:
+    dev:
+      enabled: false
+    standalone:
+      enabled: true
+      config: |
+        ui = true
+
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+        }
+
+        storage "file" {
+          path = "/vault/data"
+        }
+
+        # Azure Key Vault auto-unseal
+        seal "azurekeyvault" {
+          tenant_id     = "${AZURE_TENANT_ID}"
+          vault_name    = "${AZURE_KEYVAULT_NAME}"
+          key_name      = "vault-unseal-key"
+        }
+
+    # Extra environment variables for Azure authentication
+    extraEnvironmentVars:
+      AZURE_TENANT_ID: ""      # Fill from: az account show --query tenantId -o tsv
+      AZURE_KEYVAULT_NAME: ""  # Fill from: terraform output vault_keyvault_name
+
+    # Service account with Azure Workload Identity
+    serviceAccount:
+      create: true
+      name: "vault"
+      annotations:
+        azure.workload.identity/client-id: ""  # Fill from: terraform output vault_identity_client_id
+
+    # Enable workload identity
+    extraLabels:
+      azure.workload.identity/use: "true"
+
+    dataStorage:
+      enabled: true
+      size: 1Gi
+      storageClass: managed-premium
+
+    # Resources for production
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 250m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+  injector:
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+
+mongodb:
+  host: mongodb
+  port: 27017
+  database: microservices
+  username: root
+  password: prod-password-change-me

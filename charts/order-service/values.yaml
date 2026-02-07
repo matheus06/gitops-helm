@@ -58,6 +58,17 @@ affinity: {}
 
 env: []
 
+envFrom: []
+
+vault:
+  enabled: false
+  address: "http://vault:8200"
+  role: "order-service"
+  secretPath: "database/creds/microservices-role"
+  mongodbHost: "mongodb"
+  mongodbPort: "27017"
+  mongodbDatabase: "microservices"
+
 productServiceUrl: "http://product-service:80"
 
 metrics:

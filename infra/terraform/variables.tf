@@ -73,3 +73,19 @@ variable "tags" {
     ManagedBy   = "Terraform"
   }
 }
+
+# ============================================================================
+# Vault Auto-Unseal Configuration
+# ============================================================================
+
+variable "create_vault_keyvault" {
+  description = "Create Azure Key Vault for Vault auto-unseal"
+  type        = bool
+  default     = true
+}
+
+variable "vault_keyvault_name" {
+  description = "Name of the Azure Key Vault for Vault unseal (must be globally unique)"
+  type        = string
+  default     = "gitops-vault-unseal"
+}

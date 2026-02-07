@@ -15,3 +15,14 @@ resources:
 env:
   - name: ASPNETCORE_ENVIRONMENT
     value: "Development"
+  - name: SEED_DATA
+    value: "true"
+
+vault:
+  enabled: true
+  address: "http://vault:8200"
+  role: "product-service"
+  secretPath: "database/creds/microservices-role"
+  mongodbHost: "mongodb"
+  mongodbPort: "27017"
+  mongodbDatabase: "microservices"

@@ -10,9 +10,11 @@ A lab environment demonstrating GitOps with ArgoCD, Helm, and .NET microservices
 ├─────────────────────────────────────────────────────────────────────┤
 │  src/                    │  charts/              │  argocd/         │
 │  ├── ProductService/     │  ├── product-service/ │  ├── apps/       │
-│  └── OrderService/       │  └── order-service/   │  │   ├── dev/    │
-│                          │                       │  │   └── prod/   │
-│  .github/workflows/      │  infra/terraform/     │  └── projects/   │
+│  └── OrderService/       │  ├── order-service/   │  │   ├── dev/    │
+│                          │  ├── mongodb/         │  │   ├── prod/   │
+│  .github/workflows/      │  └── vault/           │  │   └── ubuntu/ │
+│                          │                       │  └── projects/   │
+│  infra/terraform/        │                       │                  │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -23,6 +25,8 @@ A lab environment demonstrating GitOps with ArgoCD, Helm, and .NET microservices
 │  ┌─────────────────────────┐ │  ┌─────────────────────────────────┐ │
 │  │ product-service (1 pod) │ │  │ product-service (3+ pods, HPA)  │ │
 │  │ order-service (1 pod)   │ │  │ order-service (3+ pods, HPA)    │ │
+│  │ mongodb (1 pod + PVC)   │ │  │ mongodb (1 pod + PVC)           │ │
+│  │ vault (server+injector) │ │  │ vault (server+injector)         │ │
 │  └─────────────────────────┘ │  └─────────────────────────────────┘ │
 └──────────────────────────────┴──────────────────────────────────────┘
 ```
@@ -98,13 +102,29 @@ gitops-helm/
 │   │   ├── values-dev.yaml      # Dev environment overrides
 │   │   ├── values-prod.yaml     # Prod environment overrides
 │   │   └── templates/
-│   └── order-service/           # Helm chart for OrderService
+│   ├── order-service/           # Helm chart for OrderService
+│   ├── mongodb/                 # Helm chart for MongoDB
+│   │   ├── Chart.yaml
+│   │   ├── values.yaml
+│   │   ├── values-{dev,prod,ubuntu}.yaml
+│   │   └── templates/           # deployment, service, secret, pvc
+│   └── vault/                   # Helm chart for HashiCorp Vault
+│       ├── Chart.yaml           # Depends on official Vault chart
+│       ├── values.yaml
+│       ├── values-{dev,prod,ubuntu}.yaml
+│       └── templates/           # init job for DB secrets engine
 ├── argocd/
 │   ├── apps/
 │   │   ├── dev/                 # Dev environment apps
+│   │   │   ├── product-service.yaml
+│   │   │   ├── order-service.yaml
+│   │   │   ├── mongodb.yaml
+│   │   │   └── vault.yaml
 │   │   ├── prod/                # Prod environment apps
+│   │   ├── ubuntu/              # Ubuntu/MicroK8s environment apps
 │   │   ├── app-of-apps-dev.yaml
-│   │   └── app-of-apps-prod.yaml
+│   │   ├── app-of-apps-prod.yaml
+│   │   └── app-of-apps-ubuntu.yaml
 │   ├── projects/
 │   │   └── microservices-project.yaml
 │   └── base/
@@ -154,9 +174,28 @@ gitops-helm/
 
 ## Local Development
 
+### Run MongoDB locally
+
+```bash
+# Start MongoDB container
+docker run -d --name mongodb -p 27017:27017 \
+  -e MONGO_INITDB_ROOT_USERNAME=root \
+  -e MONGO_INITDB_ROOT_PASSWORD=localdev \
+  mongo:7.0
+
+# Connection string for local dev
+# mongodb://root:localdev@localhost:27017/microservices?authSource=admin
+```
+
 ### Run services locally
 
 ```bash
+# Set MongoDB connection (PowerShell)
+$env:MONGODB_CONNECTION_STRING="mongodb://root:localdev@localhost:27017/microservices?authSource=admin"
+
+# Set MongoDB connection (Bash)
+export MONGODB_CONNECTION_STRING="mongodb://root:localdev@localhost:27017/microservices?authSource=admin"
+
 # ProductService
 cd src/ProductService
 dotnet run
@@ -196,6 +235,22 @@ argocd app list
 
 # Manually sync an application
 argocd app sync product-service-dev
+
+# MongoDB commands
+kubectl exec -it mongodb-0 -n microservices-dev -- mongosh -u root -p
+# > use microservices
+# > db.products.find()
+# > db.orders.find()
+
+# Vault commands
+kubectl port-forward svc/vault 8200:8200 -n microservices-dev
+# Access UI at http://localhost:8200 (token: root in dev mode)
+
+# Check Vault dynamic credentials
+kubectl exec -it vault-0 -n microservices-dev -- vault read database/creds/microservices-role
+
+# View Vault Agent logs in a service pod
+kubectl logs <pod-name> -c vault-agent -n microservices-dev
 ```
 
 ## Cleanup
@@ -471,6 +526,257 @@ product-service   Deployment/product-service   25%/70%   3         10        3
 ```
 
 This means: CPU is at 25%, target is 70%, so no scaling needed. Currently running 3 pods.
+
+---
+
+## MongoDB Persistence
+
+Both services use MongoDB for data persistence instead of in-memory storage.
+
+### Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ ProductService  │────▶│    MongoDB      │◀────│  OrderService   │
+│ (products coll) │     │  microservices  │     │ (orders coll)   │
+└─────────────────┘     │    database     │     └─────────────────┘
+                        └────────┬────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │ PersistentVolume│
+                        │   (1Gi - 10Gi)  │
+                        └─────────────────┘
+```
+
+### Collections
+
+| Collection | Service | Purpose |
+|------------|---------|---------|
+| `products` | ProductService | Product catalog (id, name, price, stock) |
+| `orders` | OrderService | Order records (id, customerId, items, status) |
+| `counters` | Both | Auto-increment ID sequences |
+
+### Data Seeding
+
+On startup, services check if data exists and seed initial records if empty (idempotent):
+- ProductService: 4 sample products (Laptop, Mouse, Keyboard, Monitor)
+- OrderService: 3 sample orders
+
+Control seeding via environment variable:
+```yaml
+env:
+  - name: SEED_DATA
+    value: "true"  # or "false" to disable
+```
+
+### Storage Configuration
+
+| Environment | Storage Class | Size |
+|-------------|---------------|------|
+| dev | default | 1Gi |
+| prod | managed-premium | 1Gi |
+| ubuntu | microk8s-hostpath | 1Gi |
+
+---
+
+## HashiCorp Vault - Secrets Management
+
+Vault provides dynamic MongoDB credentials with automatic rotation.
+
+### Architecture
+
+```
+┌─────────────────┐     1. Request creds       ┌─────────────────┐
+│  Vault Agent    │ ─────────────────────────> │  Vault Server   │
+│  (sidecar)      │ <───────────────────────── │                 │
+└────────┬────────┘     2. Dynamic user/pass   └────────┬────────┘
+         │                   (1h lease)                │
+         │ 3. Write to                                 │
+         │    /vault/secrets/mongodb                   ▼
+         ▼                                     ┌─────────────────┐
+┌─────────────────┐                            │     MongoDB     │
+│    .NET App     │ ─────────────────────────> │   (validates    │
+│  (reads file)   │     4. Connect with        │    creds)       │
+└─────────────────┘        dynamic creds       └─────────────────┘
+```
+
+### Dynamic Credentials
+
+Instead of static passwords, Vault generates unique credentials per pod:
+
+| Property | Value |
+|----------|-------|
+| Secret Engine | Database (MongoDB plugin) |
+| Default TTL | **1 hour** |
+| Max TTL | 24 hours |
+| Role | `readWrite` on microservices DB |
+| Rotation | Automatic before expiry |
+
+### How It Works
+
+1. **Pod starts** → Vault Agent sidecar authenticates via Kubernetes ServiceAccount
+2. **Agent requests credentials** → Vault creates temporary MongoDB user
+3. **Credentials written to file** → `/vault/secrets/mongodb` contains connection string
+4. **.NET app reads file** → Connects to MongoDB with dynamic credentials
+5. **Before TTL expires** → Agent automatically renews credentials
+6. **Pod terminates** → Vault revokes the credentials
+
+### Vault Components
+
+| Component | Purpose |
+|-----------|---------|
+| Vault Server | Stores secrets, manages leases |
+| Vault Agent Injector | Mutating webhook that adds sidecar to pods |
+| Vault Agent (sidecar) | Authenticates and fetches secrets for the pod |
+
+### Pod Annotations
+
+Services use these annotations to enable Vault injection:
+
+```yaml
+annotations:
+  vault.hashicorp.com/agent-inject: "true"
+  vault.hashicorp.com/role: "product-service"
+  vault.hashicorp.com/agent-inject-secret-mongodb: "database/creds/microservices-role"
+  vault.hashicorp.com/agent-inject-template-mongodb: |
+    {{- with secret "database/creds/microservices-role" -}}
+    mongodb://{{ .Data.username }}:{{ .Data.password }}@mongodb:27017/microservices?authSource=admin
+    {{- end -}}
+```
+
+### Verify Vault Status
+
+```bash
+# Check Vault pods
+kubectl get pods -n microservices-dev -l app.kubernetes.io/name=vault
+
+# Check injector logs
+kubectl logs -n microservices-dev -l app.kubernetes.io/name=vault-agent-injector
+
+# Access Vault UI (dev mode)
+kubectl port-forward svc/vault 8200:8200 -n microservices-dev
+# Open http://localhost:8200 (token: root)
+
+# Check dynamic credentials
+kubectl exec -it vault-0 -n microservices-dev -- vault read database/creds/microservices-role
+```
+
+### Auto-Unseal with Azure Key Vault (Production)
+
+In production, Vault uses Azure Key Vault for automatic unsealing instead of manual keys.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Vault Auto-Unseal Flow                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────┐    Workload Identity    ┌──────────────────────┐       │
+│  │ Vault Pod   │ ──────────────────────> │   Azure Key Vault    │       │
+│  │ (AKS)       │                         │   (unseal key)       │       │
+│  └──────┬──────┘ <─────────────────────  └──────────────────────┘       │
+│         │           Decrypt master key                                  │
+│         ▼                                                               │
+│  ┌─────────────┐                                                        │
+│  │ Vault       │  Auto-unsealed and ready to serve                      │
+│  │ Unsealed    │                                                        │
+│  └─────────────┘                                                        │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Environment Configuration
+
+| Environment | Unseal Method | Security Level |
+|-------------|---------------|----------------|
+| dev | Dev mode (auto) | Low (dev only) |
+| ubuntu | Dev mode (auto) | Low (local dev) |
+| **prod** | **Azure Key Vault** | **Production-ready** |
+
+#### Setup Steps for Production
+
+1. **Deploy infrastructure with Terraform:**
+```bash
+cd infra/terraform
+terraform apply
+```
+
+2. **Get the required values:**
+```bash
+# Get Terraform outputs
+terraform output vault_keyvault_name
+terraform output vault_identity_client_id
+
+# Get Azure tenant ID
+az account show --query tenantId -o tsv
+```
+
+3. **Update `charts/vault/values-prod.yaml` with actual values:**
+```yaml
+vault:
+  server:
+    extraEnvironmentVars:
+      AZURE_TENANT_ID: "<your-tenant-id>"
+      AZURE_KEYVAULT_NAME: "<your-keyvault-name>"
+    serviceAccount:
+      annotations:
+        azure.workload.identity/client-id: "<your-client-id>"
+```
+
+4. **Initialize Vault (first time only):**
+```bash
+kubectl exec -it vault-0 -n microservices-prod -- vault operator init
+# Save the recovery keys and root token securely!
+```
+
+#### How It Works
+
+1. **Terraform creates:** Azure Key Vault + RSA key + Managed Identity
+2. **Workload Identity:** Links Kubernetes ServiceAccount to Azure Identity
+3. **On Vault startup:** Vault uses Azure Key Vault to decrypt its master key
+4. **No manual intervention:** Vault auto-unseals on every restart
+
+#### Terraform Resources Created
+
+| Resource | Purpose |
+|----------|---------|
+| `azurerm_key_vault` | Stores the unseal key |
+| `azurerm_key_vault_key` | RSA key for encrypting Vault's master key |
+| `azurerm_user_assigned_identity` | Managed identity for Vault |
+| `azurerm_federated_identity_credential` | Links K8s SA to Azure identity |
+| `azurerm_role_assignment` | Grants "Key Vault Crypto User" role |
+
+---
+
+## Future Improvements
+
+### Service Communication
+- [ ] Add inter-service calls (e.g., OrderService validates products before creating orders)
+- [ ] Consider API Gateway or service mesh (Istio/Linkerd)
+
+### Security
+- [ ] Add Kubernetes NetworkPolicies to restrict pod-to-pod traffic
+- [ ] Add authentication/authorization (JWT, OAuth2)
+- [ ] Enable container image scanning in CI pipeline
+- [ ] Configure Vault HA mode for production
+
+### Production Readiness
+- [ ] Add meaningful readiness/liveness probes (beyond HTTP 200)
+- [ ] Implement circuit breakers and retry policies (Polly for .NET)
+- [ ] Add resource quotas and limit ranges per namespace
+
+### Observability Enhancements
+- [ ] Create Grafana dashboards for custom metrics
+- [ ] Add alerting rules (PrometheusRule CRDs)
+- [ ] Implement SLOs/SLIs tracking
+
+### CI/CD
+- [ ] Add Helm chart linting (`helm lint`) in CI
+- [ ] Add Kubernetes manifest validation (kubeconform, kube-score)
+- [ ] Implement blue/green or canary deployments via Argo Rollouts
+
+### Testing
+- [ ] Add integration tests against deployed services
+- [ ] Add load testing (k6, Locust) in the pipeline
 
 ## License
 

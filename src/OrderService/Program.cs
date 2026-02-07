@@ -1,4 +1,7 @@
 using System.Diagnostics.Metrics;
+using MongoDB.Driver;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -12,6 +15,28 @@ builder.Services.AddHttpClient();
 
 var otelEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ?? "http://otel-collector:4317";
 var serviceName = "order-service";
+
+// MongoDB configuration - check Vault file first, then env var, then default
+var vaultSecretPath = "/vault/secrets/mongodb";
+string mongoConnectionString;
+if (File.Exists(vaultSecretPath))
+{
+    mongoConnectionString = File.ReadAllText(vaultSecretPath).Trim();
+}
+else
+{
+    mongoConnectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING")
+        ?? "mongodb://localhost:27017/microservices";
+}
+var mongoClient = new MongoClient(mongoConnectionString);
+var database = mongoClient.GetDatabase("microservices");
+var ordersCollection = database.GetCollection<OrderDocument>("orders");
+var countersCollection = database.GetCollection<CounterDocument>("counters");
+
+// Register MongoDB client for health checks
+builder.Services.AddSingleton<IMongoClient>(mongoClient);
+builder.Services.AddHealthChecks()
+    .AddMongoDb(mongoConnectionString, name: "mongodb", timeout: TimeSpan.FromSeconds(3));
 
 // Custom metrics
 var meter = new Meter(serviceName, "1.0.0");
@@ -44,69 +69,151 @@ var logger = app.Logger;
 app.UseSwagger();
 app.UseSwaggerUI();
 
-var orders = new List<Order>
+// Seed data on startup (idempotent)
+var seedData = Environment.GetEnvironmentVariable("SEED_DATA") ?? "true";
+if (seedData.Equals("true", StringComparison.OrdinalIgnoreCase))
 {
-    new(1, 101, new[] { new OrderItem(1, 2), new OrderItem(2, 1) }, OrderStatus.Completed, DateTime.UtcNow.AddDays(-5)),
-    new(2, 102, new[] { new OrderItem(3, 1) }, OrderStatus.Processing, DateTime.UtcNow.AddDays(-1)),
-    new(3, 103, new[] { new OrderItem(4, 3), new OrderItem(5, 2) }, OrderStatus.Pending, DateTime.UtcNow.AddDays(-2))
-};
-
-var nextId = 3;
+    await SeedDataAsync(ordersCollection, countersCollection, logger);
+}
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "OrderService" }));
+app.MapHealthChecks("/health");
 
-app.MapGet("/api/orders", () =>
+app.MapGet("/api/orders", async () =>
 {
     logger.LogInformation("Fetching all orders");
     orderRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "list"));
-    return orders;
+    var orders = await ordersCollection.Find(_ => true).ToListAsync();
+    return orders.Select(o => o.ToOrder());
 });
 
-app.MapGet("/api/orders/{id}", (int id) =>
+app.MapGet("/api/orders/{id}", async (int id) =>
 {
-
-    logger.LogInformation("Fetching  order with ID {OrderId}", id);
+    logger.LogInformation("Fetching order with ID {OrderId}", id);
     orderRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "get"));
-    var order = orders.FirstOrDefault(o => o.Id == id);
-    return order is not null ? Results.Ok(order) : Results.NotFound();
+    var order = await ordersCollection.Find(o => o.Id == id).FirstOrDefaultAsync();
+    return order is not null ? Results.Ok(order.ToOrder()) : Results.NotFound();
 });
 
-app.MapGet("/api/orders/customer/{customerId}", (int customerId) =>
+app.MapGet("/api/orders/customer/{customerId}", async (int customerId) =>
 {
-    var customerOrders = orders.Where(o => o.CustomerId == customerId).ToList();
-    return Results.Ok(customerOrders);
+    var orders = await ordersCollection.Find(o => o.CustomerId == customerId).ToListAsync();
+    return Results.Ok(orders.Select(o => o.ToOrder()));
 });
 
-app.MapPost("/api/orders", (CreateOrderRequest request) =>
+app.MapPost("/api/orders", async (CreateOrderRequest request) =>
 {
     orderRequestCounter.Add(1, new KeyValuePair<string, object?>("endpoint", "create"));
     ordersCreatedCounter.Add(1);
-    var order = new Order(nextId++, request.CustomerId, request.Items, OrderStatus.Pending, DateTime.UtcNow);
-    orders.Add(order);
-    return Results.Created($"/api/orders/{order.Id}", order);
+
+    var nextId = await GetNextSequenceValueAsync(countersCollection, "orderId");
+    var doc = new OrderDocument
+    {
+        Id = nextId,
+        CustomerId = request.CustomerId,
+        Items = request.Items.Select(i => new OrderItemDocument { ProductId = i.ProductId, Quantity = i.Quantity }).ToList(),
+        Status = OrderStatus.Pending,
+        CreatedAt = DateTime.UtcNow
+    };
+    await ordersCollection.InsertOneAsync(doc);
+    return Results.Created($"/api/orders/{doc.Id}", doc.ToOrder());
 });
 
-app.MapPut("/api/orders/{id}/status", (int id, UpdateStatusRequest request) =>
+app.MapPut("/api/orders/{id}/status", async (int id, UpdateStatusRequest request) =>
 {
-    var order = orders.FirstOrDefault(o => o.Id == id);
-    if (order is null) return Results.NotFound();
-
-    var index = orders.IndexOf(order);
-    orders[index] = order with { Status = request.Status };
-    return Results.Ok(orders[index]);
+    var filter = Builders<OrderDocument>.Filter.Eq(o => o.Id, id);
+    var update = Builders<OrderDocument>.Update.Set(o => o.Status, request.Status);
+    var result = await ordersCollection.FindOneAndUpdateAsync(filter, update,
+        new FindOneAndUpdateOptions<OrderDocument> { ReturnDocument = ReturnDocument.After });
+    if (result is null) return Results.NotFound();
+    return Results.Ok(result.ToOrder());
 });
 
-app.MapDelete("/api/orders/{id}", (int id) =>
+app.MapDelete("/api/orders/{id}", async (int id) =>
 {
-    var order = orders.FirstOrDefault(o => o.Id == id);
-    if (order is null) return Results.NotFound();
-    orders.Remove(order);
+    var result = await ordersCollection.DeleteOneAsync(o => o.Id == id);
+    if (result.DeletedCount == 0) return Results.NotFound();
     return Results.NoContent();
 });
 
 app.Run();
+
+static async Task<int> GetNextSequenceValueAsync(IMongoCollection<CounterDocument> counters, string name)
+{
+    var filter = Builders<CounterDocument>.Filter.Eq(c => c.Id, name);
+    var update = Builders<CounterDocument>.Update.Inc(c => c.Seq, 1);
+    var options = new FindOneAndUpdateOptions<CounterDocument>
+    {
+        IsUpsert = true,
+        ReturnDocument = ReturnDocument.After
+    };
+    var result = await counters.FindOneAndUpdateAsync(filter, update, options);
+    return result.Seq;
+}
+
+static async Task SeedDataAsync(
+    IMongoCollection<OrderDocument> orders,
+    IMongoCollection<CounterDocument> counters,
+    ILogger logger)
+{
+    var count = await orders.CountDocumentsAsync(_ => true);
+    if (count > 0)
+    {
+        logger.LogInformation("Orders collection already has {Count} items, skipping seed", count);
+        return;
+    }
+
+    logger.LogInformation("Seeding orders collection");
+
+    var seedOrders = new List<OrderDocument>
+    {
+        new()
+        {
+            Id = 1,
+            CustomerId = 101,
+            Items = new List<OrderItemDocument>
+            {
+                new() { ProductId = 1, Quantity = 2 },
+                new() { ProductId = 2, Quantity = 1 }
+            },
+            Status = OrderStatus.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-5)
+        },
+        new()
+        {
+            Id = 2,
+            CustomerId = 102,
+            Items = new List<OrderItemDocument>
+            {
+                new() { ProductId = 3, Quantity = 1 }
+            },
+            Status = OrderStatus.Processing,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        },
+        new()
+        {
+            Id = 3,
+            CustomerId = 103,
+            Items = new List<OrderItemDocument>
+            {
+                new() { ProductId = 4, Quantity = 3 },
+                new() { ProductId = 1, Quantity = 2 }
+            },
+            Status = OrderStatus.Pending,
+            CreatedAt = DateTime.UtcNow.AddDays(-2)
+        }
+    };
+
+    await orders.InsertManyAsync(seedOrders);
+
+    // Initialize counter to 3 (last seeded ID)
+    var filter = Builders<CounterDocument>.Filter.Eq(c => c.Id, "orderId");
+    var update = Builders<CounterDocument>.Update.SetOnInsert(c => c.Seq, 3);
+    await counters.UpdateOneAsync(filter, update, new UpdateOptions { IsUpsert = true });
+
+    logger.LogInformation("Seeded {Count} orders", seedOrders.Count);
+}
 
 public record Order(int Id, int CustomerId, OrderItem[] Items, OrderStatus Status, DateTime CreatedAt);
 public record OrderItem(int ProductId, int Quantity);
@@ -120,4 +227,29 @@ public enum OrderStatus
     Shipped,
     Completed,
     Cancelled
+}
+
+public class OrderDocument
+{
+    [BsonId]
+    public int Id { get; set; }
+    public int CustomerId { get; set; }
+    public List<OrderItemDocument> Items { get; set; } = new();
+    public OrderStatus Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public Order ToOrder() => new(Id, CustomerId, Items.Select(i => new OrderItem(i.ProductId, i.Quantity)).ToArray(), Status, CreatedAt);
+}
+
+public class OrderItemDocument
+{
+    public int ProductId { get; set; }
+    public int Quantity { get; set; }
+}
+
+public class CounterDocument
+{
+    [BsonId]
+    public string Id { get; set; } = string.Empty;
+    public int Seq { get; set; }
 }

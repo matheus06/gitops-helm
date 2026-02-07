@@ -1,0 +1,41 @@
+vault:
+  global:
+    enabled: true
+
+  injector:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 50m
+      limits:
+        memory: 128Mi
+        cpu: 250m
+
+  server:
+    enabled: true
+    dev:
+      enabled: true
+      devRootToken: "root"
+    standalone:
+      enabled: true
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 50m
+      limits:
+        memory: 128Mi
+        cpu: 250m
+
+  ui:
+    enabled: true
+    serviceType: ClusterIP
+
+# MongoDB connection configuration (used by init job)
+mongodb:
+  host: mongodb
+  port: 27017
+  database: microservices
+  username: root
+  password: changeme

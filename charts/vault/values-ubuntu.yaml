@@ -1,0 +1,11 @@
+vault:
+  server:
+    dataStorage:
+      storageClass: microk8s-hostpath
+
+mongodb:
+  host: mongodb
+  port: 27017
+  database: microservices
+  username: root
+  password: local-dev-password

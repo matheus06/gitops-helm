@@ -1,0 +1,39 @@
+replicaCount: 1
+
+image:
+  repository: mongo
+  pullPolicy: IfNotPresent
+  tag: "7.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+auth:
+  rootUsername: root
+  rootPassword: changeme
+  database: microservices
+
+service:
+  type: ClusterIP
+  port: 27017
+
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 1Gi
+  accessMode: ReadWriteOnce
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
