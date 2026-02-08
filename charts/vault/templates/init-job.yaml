@@ -1,3 +1,6 @@
+{{- if .Values.vault.server.dev.enabled }}
+# This job only runs in dev mode (in-memory storage)
+# For production, Vault must be manually initialized - see docs/VAULT-PRODUCTION.md
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -5,9 +8,9 @@ metadata:
   labels:
     {{- include "vault-config.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "10"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    # Dev mode: Use ArgoCD hooks - runs on every sync (config lost on restart)
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 10
   template:
@@ -34,3 +37,4 @@ spec:
           configMap:
             name: {{ include "vault-config.fullname" . }}-init
             defaultMode: 0755
+{{- end }}

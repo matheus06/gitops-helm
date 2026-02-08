@@ -17,6 +17,7 @@ This document captures issues encountered during deployment and their solutions.
 11. [Vault Agent - Service Account Not Authorized](#11-vault-agent---service-account-not-authorized)
 12. [Services Cannot Connect to MongoDB - Wrong Hostname](#12-services-cannot-connect-to-mongodb---wrong-hostname)
 13. [Vault Database Plugin Not Creating Users](#13-vault-database-plugin-not-creating-users)
+14. [Vault Configuration Lost After Cluster Restart](#14-vault-configuration-lost-after-cluster-restart)
 
 ---
 
@@ -771,3 +772,109 @@ kubectl exec -n microservices-ubuntu deploy/mongodb-ubuntu -- mongo -u root -p <
 ```bash
 kubectl exec -n microservices-ubuntu vault-ubuntu-0 -- sh -c "nc -zv mongodb-ubuntu 27017"
 ```
+
+---
+
+## 14. Vault Configuration Lost After Cluster Restart
+
+### Symptom
+
+After restarting the Kubernetes cluster (e.g., VM reboot, MicroK8s restart), services are stuck in `Init:0/1` state. The `vault-agent-init` container logs show authentication errors.
+
+### Error Message
+
+```
+[ERROR] agent.auth.handler: error authenticating:
+  error=
+  | URL: PUT http://vault-ubuntu.microservices-ubuntu.svc:8200/v1/auth/kubernetes/login
+  | Code: 403. Errors:
+  |
+  | * permission denied
+```
+
+### Diagnosis
+
+Check if Vault has lost its configuration:
+
+```bash
+# Check auth methods - should show 'kubernetes/' if configured
+kubectl exec -n microservices-ubuntu vault-ubuntu-0 -- vault auth list
+
+# Check secrets engines - should show 'database/' if configured
+kubectl exec -n microservices-ubuntu vault-ubuntu-0 -- vault secrets list
+```
+
+If `kubernetes/` auth or `database/` secrets engine is missing, Vault lost its configuration.
+
+### Cause
+
+Vault in **dev mode** stores all configuration in memory. When the cluster restarts:
+1. Vault pod restarts and loses all configuration
+2. The init job (which configures Vault) was originally a Helm hook (`post-install,post-upgrade`)
+3. Helm hooks only run during actual `helm install` or `helm upgrade` operations
+4. ArgoCD "hard refresh" does NOT trigger Helm hooks to re-run
+
+### Solution
+
+**Fix Applied:** The init job now conditionally uses ArgoCD hooks for dev mode:
+
+```yaml
+# charts/vault/templates/init-job.yaml
+{{- if .Values.vault.server.dev.enabled }}
+# Dev mode: Use ArgoCD hooks - runs on every sync (config lost on restart)
+argocd.argoproj.io/hook: PostSync
+argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- else }}
+# Prod mode: Use Helm hooks - runs only on install/upgrade (config persists)
+"helm.sh/hook": post-install,post-upgrade
+{{- end }}
+```
+
+- **Dev/Ubuntu** (`vault.server.dev.enabled: true`): Init job runs on every ArgoCD sync
+- **Prod** (`vault.server.dev.enabled: false`): Init job runs only on Helm install/upgrade
+
+**To recover after a cluster restart:**
+
+```bash
+# Delete the old init job
+kubectl delete job vault-ubuntu-init -n microservices-ubuntu
+
+# Trigger ArgoCD sync (this will now run the init job)
+kubectl -n argocd patch application vault-ubuntu --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{}}}'
+
+# Wait for init job to complete
+kubectl get pods -n microservices-ubuntu -w
+
+# Restart services after init job completes
+kubectl rollout restart deployment product-service-ubuntu order-service-ubuntu -n microservices-ubuntu
+```
+
+**Manual recovery (if ArgoCD sync doesn't work):**
+
+```bash
+kubectl exec -n microservices-ubuntu vault-ubuntu-0 -- sh -c '
+vault secrets enable -path=database database 2>/dev/null || true
+vault auth enable kubernetes 2>/dev/null || true
+vault write auth/kubernetes/config kubernetes_host="https://$KUBERNETES_PORT_443_TCP_ADDR:443"
+vault policy write microservices - <<EOF
+path "database/creds/microservices-role" { capabilities = ["read"] }
+EOF
+vault write auth/kubernetes/role/product-service bound_service_account_names=product-service,product-service-ubuntu,default bound_service_account_namespaces=microservices-ubuntu policies=microservices ttl=1h
+vault write auth/kubernetes/role/order-service bound_service_account_names=order-service,order-service-ubuntu,default bound_service_account_namespaces=microservices-ubuntu policies=microservices ttl=1h
+vault write database/config/mongodb plugin_name=mongodb-database-plugin allowed_roles="microservices-role" connection_url="mongodb://{{username}}:{{password}}@mongodb-ubuntu:27017/admin?authSource=admin" username="root" password="local-dev-password"
+vault write database/roles/microservices-role db_name=mongodb creation_statements="{\"db\": \"admin\", \"roles\": [{\"role\": \"readWrite\", \"db\": \"microservices\"}]}" default_ttl="1h" max_ttl="24h"
+echo "Done!"
+'
+
+# Then restart services
+kubectl rollout restart deployment product-service-ubuntu order-service-ubuntu -n microservices-ubuntu
+```
+
+### Prevention
+
+For production environments, use Vault with **persistent storage** instead of dev mode. This ensures configuration survives restarts.
+
+See [VAULT-PRODUCTION.md](VAULT-PRODUCTION.md) for complete production setup guide with:
+- Azure Key Vault auto-unseal
+- Manual initialization steps
+- Secure credential management

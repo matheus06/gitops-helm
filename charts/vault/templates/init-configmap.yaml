@@ -1,3 +1,6 @@
+{{- if .Values.vault.server.dev.enabled }}
+# This configmap only exists in dev mode
+# For production, Vault must be manually initialized - see docs/VAULT-PRODUCTION.md
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -86,3 +89,4 @@ data:
 
     echo "Service roles created"
     echo "Vault initialization complete!"
+{{- end }}
