@@ -273,9 +273,44 @@ microk8s kubectl describe application <app-name> -n argocd
 # Check status
 microk8s status
 
-# Start if stopped
-microk8s start
+# Start if stopped - USE THE STARTUP SCRIPT (see below)
+./infra/scripts/local-ubuntu/cluster-start.sh
 
 # Check logs
 sudo journalctl -u snap.microk8s.daemon-kubelite
+```
+
+## Cluster Start Script (Important!)
+
+After a cluster restart (VM reboot, `microk8s stop/start`), Vault loses its configuration because it runs in dev mode (in-memory storage). Use the provided startup script instead of `microk8s start`:
+
+```bash
+# Make executable (first time only)
+chmod +x infra/scripts/local-ubuntu/cluster-start.sh
+
+# Use this to start the cluster
+./infra/scripts/local-ubuntu/cluster-start.sh
+```
+
+The script:
+1. Starts MicroK8s and waits for readiness
+2. Triggers ArgoCD sync to reconfigure Vault
+3. Restarts services to pick up new Vault credentials
+4. Starts MongoDB port-forward for external access (port 27017)
+
+### MongoDB Connection After Startup
+
+The script automatically starts a port-forward for MongoDB. Connect from your machine:
+
+```
+mongodb://root:local-dev-password@<VM-IP>:27017/?authSource=admin
+```
+
+To manually manage the port-forward:
+```bash
+# Stop port-forward
+pkill -f 'port-forward svc/mongodb-ubuntu'
+
+# Start manually
+microk8s kubectl port-forward svc/mongodb-ubuntu -n microservices-ubuntu 27017:27017 --address 0.0.0.0 &
 ```

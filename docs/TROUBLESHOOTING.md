@@ -884,6 +884,27 @@ See [VAULT-PRODUCTION.md](VAULT-PRODUCTION.md) for complete production setup gui
 - Manual initialization steps
 - Secure credential management
 
+### Recommended: Use Cluster Start Script
+
+For the Ubuntu/MicroK8s environment, use the provided startup script instead of `microk8s start`:
+
+```bash
+# Make script executable (first time only)
+chmod +x infra/scripts/local-ubuntu/cluster-start.sh
+
+# Use this instead of 'microk8s start'
+./infra/scripts/local-ubuntu/cluster-start.sh
+
+# Or copy to home directory for convenience
+cp infra/scripts/local-ubuntu/cluster-start.sh ~/cluster-start.sh
+~/cluster-start.sh
+```
+
+The script:
+1. Starts MicroK8s and waits for readiness
+2. Triggers ArgoCD sync to run Vault init job
+3. Restarts services to pick up new Vault credentials
+
 ---
 
 ## 15. MongoDB Upgrade - featureCompatibilityVersion Error

@@ -29,8 +29,12 @@ echo "Enabling required addons..."
 microk8s enable dns
 microk8s enable storage
 microk8s enable helm3
-microk8s enable obeservability
+microk8s enable observability
 microk8s enable ingress
+
+# Set up kubectl alias
+echo "Setting up kubectl alias..."
+snap alias microk8s.kubectl kubectl
 
 echo ""
 echo "============================================"
@@ -40,10 +44,8 @@ echo ""
 echo "IMPORTANT: Log out and log back in for group changes to take effect."
 echo "Or run: newgrp microk8s"
 echo ""
-echo "To use kubectl, you can either:"
-echo "  1. Use microk8s kubectl (e.g., microk8s kubectl get pods)"
-echo "  2. Create an alias: alias kubectl='microk8s kubectl'"
-echo "  3. Export kubeconfig: microk8s config > ~/.kube/config"
+echo "kubectl alias has been configured. You can use 'kubectl' directly."
+echo "Example: kubectl get pods -A"
 echo ""
 echo "Next steps:"
 echo "  1. Run: ./install-argocd-microk8s.sh"
