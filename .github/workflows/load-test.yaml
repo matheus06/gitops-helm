@@ -1,0 +1,73 @@
+name: Load Tests (AKS)
+
+# This workflow is for AKS environments with public/accessible endpoints.
+# For local MicroK8s, run k6 manually: k6 run tests/load/smoke-test.js
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test type'
+        required: true
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - load-product
+          - load-order
+          - load-all
+      product_url:
+        description: 'Product Service URL (AKS)'
+        required: true
+        default: 'https://product-dev.example.com'
+      order_url:
+        description: 'Order Service URL (AKS)'
+        required: true
+        default: 'https://order-dev.example.com'
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run smoke test
+        if: ${{ github.event.inputs.test_type == 'smoke' }}
+        run: |
+          k6 run tests/load/smoke-test.js \
+            --env PRODUCT_URL=${{ github.event.inputs.product_url }} \
+            --env ORDER_URL=${{ github.event.inputs.order_url }} \
+            --summary-export=smoke-results.json
+
+      - name: Run product service load test
+        if: ${{ github.event.inputs.test_type == 'load-product' || github.event.inputs.test_type == 'load-all' }}
+        run: |
+          k6 run tests/load/product-service.js \
+            --env BASE_URL=${{ github.event.inputs.product_url }} \
+            --summary-export=product-results.json
+
+      - name: Run order service load test
+        if: ${{ github.event.inputs.test_type == 'load-order' || github.event.inputs.test_type == 'load-all' }}
+        run: |
+          k6 run tests/load/order-service.js \
+            --env BASE_URL=${{ github.event.inputs.order_url }} \
+            --summary-export=order-results.json
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-results-${{ github.run_id }}
+          path: |
+            *-results.json
