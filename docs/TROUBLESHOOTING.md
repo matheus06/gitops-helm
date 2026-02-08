@@ -18,6 +18,7 @@ This document captures issues encountered during deployment and their solutions.
 12. [Services Cannot Connect to MongoDB - Wrong Hostname](#12-services-cannot-connect-to-mongodb---wrong-hostname)
 13. [Vault Database Plugin Not Creating Users](#13-vault-database-plugin-not-creating-users)
 14. [Vault Configuration Lost After Cluster Restart](#14-vault-configuration-lost-after-cluster-restart)
+15. [MongoDB Upgrade - featureCompatibilityVersion Error](#15-mongodb-upgrade---featurecompatibilityversion-error)
 
 ---
 
@@ -606,8 +607,8 @@ Vault logs:
 # Generate credentials from Vault
 kubectl exec -n microservices-ubuntu vault-ubuntu-0 -- vault read database/creds/microservices-role
 
-# Immediately check if user was created in MongoDB
-kubectl exec -n microservices-ubuntu deploy/mongodb-ubuntu -- mongo -u root -p <password> --authenticationDatabase admin --eval "db.getSiblingDB('admin').getUsers()"
+# Immediately check if user was created in MongoDB (use mongosh for MongoDB 5.0+)
+kubectl exec -n microservices-ubuntu deploy/mongodb-ubuntu -- mongosh -u root -p <password> --authenticationDatabase admin --eval "db.getSiblingDB('admin').getUsers()"
 ```
 
 If the user doesn't appear in MongoDB after generating credentials, Vault isn't actually creating users.
@@ -765,6 +766,10 @@ kubectl logs <pod-name> -n microservices-ubuntu -c vault-agent --tail=30
 
 ### Verify MongoDB Users Created by Vault
 ```bash
+# MongoDB 5.0+ (mongosh)
+kubectl exec -n microservices-ubuntu deploy/mongodb-ubuntu -- mongosh -u root -p <password> --authenticationDatabase admin --eval "db.getSiblingDB('admin').getUsers()"
+
+# MongoDB 4.4 (mongo)
 kubectl exec -n microservices-ubuntu deploy/mongodb-ubuntu -- mongo -u root -p <password> --authenticationDatabase admin --eval "db.getSiblingDB('admin').getUsers()"
 ```
 
@@ -878,3 +883,79 @@ See [VAULT-PRODUCTION.md](VAULT-PRODUCTION.md) for complete production setup gui
 - Azure Key Vault auto-unseal
 - Manual initialization steps
 - Secure credential management
+
+---
+
+## 15. MongoDB Upgrade - featureCompatibilityVersion Error
+
+### Symptom
+
+After upgrading MongoDB from 4.4 to 7.0+ (e.g., 8.0), the pod crashes on startup.
+
+### Error Message
+
+```json
+{"s":"F", "c":"CONTROL", "id":20573, "ctx":"initandlisten", "msg":"Wrong mongod version",
+  "attr":{"error":"UPGRADE PROBLEM: Found an invalid featureCompatibilityVersion document
+  (ERROR: Invalid feature compatibility version value '4.4'; expected '7.0' or '7.3' or '8.0')"}}
+```
+
+### Cause
+
+MongoDB stores a `featureCompatibilityVersion` in the data directory. You cannot skip major versions during upgrade:
+- 4.4 → 5.0 → 6.0 → 7.0 → 8.0 (required path)
+- 4.4 → 8.0 directly (not supported)
+
+### Solution
+
+**Option 1: Delete data and start fresh (recommended for dev)**
+
+Since dev environments have data seeding, it's easiest to delete the PVC:
+
+```bash
+# Delete pod first (PVC delete will hang if pod is using it)
+kubectl delete pod -n microservices-ubuntu -l app.kubernetes.io/name=mongodb --force --grace-period=0
+
+# Delete PVC
+kubectl delete pvc -n microservices-ubuntu -l app.kubernetes.io/name=mongodb
+
+# If PVC hangs, remove finalizer
+kubectl patch pvc <pvc-name> -n microservices-ubuntu -p '{"metadata":{"finalizers":null}}'
+
+# ArgoCD will recreate MongoDB with fresh data
+# Then restart services to get fresh connections
+kubectl rollout restart deployment product-service-ubuntu order-service-ubuntu -n microservices-ubuntu
+```
+
+**Option 2: Incremental upgrade (preserves data)**
+
+If you need to preserve data, upgrade through each major version:
+
+1. Set `image.tag: "5.0"`, sync, wait for healthy
+2. Set `image.tag: "6.0"`, sync, wait for healthy
+3. Set `image.tag: "7.0"`, sync, wait for healthy
+4. Set `image.tag: "8.0"`, sync, wait for healthy
+
+At each step, MongoDB automatically upgrades the `featureCompatibilityVersion`.
+
+### Related Changes
+
+When upgrading from MongoDB 4.4 to 5.0+:
+- Remove `shell: mongo` from values file (5.0+ uses `mongosh` by default)
+- The deployment template already handles this: `{{ .Values.shell | default "mongosh" }}`
+
+### Prerequisites for MongoDB 5.0+
+
+MongoDB 5.0+ requires CPU with AVX support. Verify before upgrading:
+
+```bash
+# Check for AVX support
+grep -o 'avx[^ ]*' /proc/cpuinfo | head -1
+
+# Test MongoDB image directly
+docker run --rm mongo:8.0 mongod --version
+```
+
+If you see "AVX required" errors, your CPU doesn't support it. Either:
+- Stay on MongoDB 4.4
+- Upgrade VM/hardware to support AVX

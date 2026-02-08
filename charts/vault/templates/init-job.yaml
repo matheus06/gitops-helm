@@ -10,7 +10,8 @@ metadata:
   annotations:
     # Dev mode: Use ArgoCD hooks - runs on every sync (config lost on restart)
     argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # HookSucceeded: Delete job after completion so next sync creates a fresh one
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   backoffLimit: 10
   template:
