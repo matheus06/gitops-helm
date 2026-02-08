@@ -242,6 +242,16 @@ kubectl exec -it mongodb-0 -n microservices-dev -- mongosh -u root -p
 # > db.products.find()
 # > db.orders.find()
 
+# Connect to MongoDB from host using MongoDB Compass
+# Option 1: Port forward (recommended)
+kubectl port-forward svc/mongodb-ubuntu -n microservices-ubuntu 27017:27017 --address 0.0.0.0
+# Then connect with: mongodb://root:local-dev-password@localhost:27017/?authSource=admin
+
+# Option 2: NodePort (for VM IP access)
+kubectl patch svc mongodb-ubuntu -n microservices-ubuntu --type='merge' -p '{"spec":{"type":"NodePort"}}'
+kubectl get svc mongodb-ubuntu -n microservices-ubuntu  # Note the NodePort (e.g., 31234)
+# Then connect with: mongodb://root:local-dev-password@<VM-IP>:<NodePort>/?authSource=admin
+
 # Vault commands
 kubectl port-forward svc/vault 8200:8200 -n microservices-dev
 # Access UI at http://localhost:8200 (token: root in dev mode)
@@ -529,6 +539,60 @@ This means: CPU is at 25%, target is 70%, so no scaling needed. Currently runnin
 
 ---
 
+## Connecting to MongoDB with Compass
+
+To connect to MongoDB running in Kubernetes using MongoDB Compass or other GUI tools:
+
+### Option 1: Port Forward (Recommended)
+
+```bash
+# Forward MongoDB port to your local machine
+kubectl port-forward svc/mongodb-ubuntu -n microservices-ubuntu 27017:27017
+
+# If connecting from another machine, bind to all interfaces
+kubectl port-forward svc/mongodb-ubuntu -n microservices-ubuntu 27017:27017 --address 0.0.0.0
+```
+
+**Connection string for Compass:**
+```
+mongodb://root:local-dev-password@localhost:27017/?authSource=admin
+```
+
+### Option 2: NodePort (Direct VM Access)
+
+If you need to connect using the VM's IP address:
+
+```bash
+# Change service type to NodePort
+kubectl patch svc mongodb-ubuntu -n microservices-ubuntu --type='merge' -p '{"spec":{"type":"NodePort"}}'
+
+# Get the assigned NodePort
+kubectl get svc mongodb-ubuntu -n microservices-ubuntu
+# Output: mongodb-ubuntu   NodePort   10.x.x.x   <none>   27017:31234/TCP
+```
+
+**Connection string for Compass:**
+```
+mongodb://root:local-dev-password@<VM-IP>:31234/?authSource=admin
+```
+
+Replace `<VM-IP>` with your VM's IP address and `31234` with the actual NodePort shown.
+
+### Compass Connection Settings
+
+| Field | Value |
+|-------|-------|
+| Host | `localhost` (port-forward) or `<VM-IP>` (NodePort) |
+| Port | `27017` (port-forward) or NodePort |
+| Authentication | Username/Password |
+| Username | `root` |
+| Password | `local-dev-password` |
+| Auth Database | `admin` |
+
+**Note:** Exposing MongoDB via NodePort is not recommended for production. Use port-forward for development.
+
+---
+
 ## MongoDB Persistence
 
 Both services use MongoDB for data persistence instead of in-memory storage.
@@ -537,7 +601,7 @@ Both services use MongoDB for data persistence instead of in-memory storage.
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ ProductService  │────▶│    MongoDB      │◀────│  OrderService   │
+│ ProductService  │───> │    MongoDB      │<────│  OrderService   │
 │ (products coll) │     │  microservices  │     │ (orders coll)   │
 └─────────────────┘     │    database     │     └─────────────────┘
                         └────────┬────────┘
@@ -590,9 +654,9 @@ Vault provides dynamic MongoDB credentials with automatic rotation.
 │  Vault Agent    │ ─────────────────────────> │  Vault Server   │
 │  (sidecar)      │ <───────────────────────── │                 │
 └────────┬────────┘     2. Dynamic user/pass   └────────┬────────┘
-         │                   (1h lease)                │
-         │ 3. Write to                                 │
-         │    /vault/secrets/mongodb                   ▼
+         │                   (1h lease)                 │
+         │ 3. Write to                                  │
+         │    /vault/secrets/mongodb                    ▼
          ▼                                     ┌─────────────────┐
 ┌─────────────────┐                            │     MongoDB     │
 │    .NET App     │ ─────────────────────────> │   (validates    │

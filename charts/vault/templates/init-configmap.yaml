@@ -29,19 +29,22 @@ data:
     echo "MongoDB is ready"
 
     # Configure MongoDB connection
+    # Using ?authSource=admin to ensure proper authentication
     vault write database/config/mongodb \
       plugin_name=mongodb-database-plugin \
       allowed_roles="microservices-role" \
-      connection_url="mongodb://{{ `{{username}}` }}:{{ `{{password}}` }}@{{ .Values.mongodb.host }}:{{ .Values.mongodb.port }}/admin" \
+      connection_url="mongodb://{{ `{{username}}` }}:{{ `{{password}}` }}@{{ .Values.mongodb.host }}:{{ .Values.mongodb.port }}/admin?authSource=admin" \
       username="{{ .Values.mongodb.username }}" \
-      password="{{ .Values.mongodb.password }}"
+      password="{{ .Values.mongodb.password }}" \
+      verify_connection=true
 
     echo "MongoDB database connection configured"
 
     # Create dynamic credentials role with 1h lease
+    # Users must be created in 'admin' db with roles granted on target database
     vault write database/roles/microservices-role \
       db_name=mongodb \
-      creation_statements='{ "db": "{{ .Values.mongodb.database }}", "roles": [{ "role": "readWrite" }] }' \
+      creation_statements='{"db": "admin", "roles": [{"role": "readWrite", "db": "{{ .Values.mongodb.database }}"}]}' \
       default_ttl="1h" \
       max_ttl="24h"
 

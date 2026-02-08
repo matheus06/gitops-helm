@@ -31,6 +31,8 @@ env:
     value: "http://otel-collector:4317"
   - name: SEED_DATA
     value: "true"
+  - name: MONGODB_CONNECTION_STRING
+    value: "mongodb://root:local-dev-password@mongodb-ubuntu:27017/microservices?authSource=admin"
 
 vault:
   enabled: true
