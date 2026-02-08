@@ -28,7 +28,7 @@ env:
   - name: ASPNETCORE_ENVIRONMENT
     value: "Development"
   - name: ProductServiceUrl
-    value: "http://product-service:80"
+    value: "http://product-service-ubuntu:80"
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     value: "http://otel-collector:4317"
   - name: SEED_DATA
@@ -36,10 +36,10 @@ env:
 
 vault:
   enabled: true
-  address: "http://vault:8200"
+  address: "http://vault-ubuntu:8200"
   role: "order-service"
   secretPath: "database/creds/microservices-role"
-  mongodbHost: "mongodb"
+  mongodbHost: "mongodb-ubuntu"
   mongodbPort: "27017"
   mongodbDatabase: "microservices"
 

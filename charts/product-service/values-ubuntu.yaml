@@ -34,10 +34,10 @@ env:
 
 vault:
   enabled: true
-  address: "http://vault:8200"
+  address: "http://vault-ubuntu:8200"
   role: "product-service"
   secretPath: "database/creds/microservices-role"
-  mongodbHost: "mongodb"
+  mongodbHost: "mongodb-ubuntu"
   mongodbPort: "27017"
   mongodbDatabase: "microservices"
 
