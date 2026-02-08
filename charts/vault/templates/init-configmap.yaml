@@ -66,15 +66,17 @@ data:
     echo "Microservices policy created"
 
     # Create role for product-service
+    # Include both short and full names (with environment suffix)
     vault write auth/kubernetes/role/product-service \
-      bound_service_account_names=product-service,default \
+      bound_service_account_names=product-service,product-service-ubuntu,product-service-dev,product-service-prod,default \
       bound_service_account_namespaces={{ .Release.Namespace }} \
       policies=microservices \
       ttl=1h
 
     # Create role for order-service
+    # Include both short and full names (with environment suffix)
     vault write auth/kubernetes/role/order-service \
-      bound_service_account_names=order-service,default \
+      bound_service_account_names=order-service,order-service-ubuntu,order-service-dev,order-service-prod,default \
       bound_service_account_namespaces={{ .Release.Namespace }} \
       policies=microservices \
       ttl=1h
