@@ -4,7 +4,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/matheus06/frontend-app
   pullPolicy: Always
-  tag: "latest"
+  tag: "dev-initial"
 
 service:
   type: ClusterIP
