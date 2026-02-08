@@ -4,7 +4,7 @@ vault:
       storageClass: microk8s-hostpath
 
 mongodb:
-  host: mongodb
+  host: mongodb-ubuntu
   port: 27017
   database: microservices
   username: root
