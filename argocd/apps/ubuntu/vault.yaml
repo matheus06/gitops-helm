@@ -7,6 +7,11 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: microservices
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
   source:
     repoURL: https://github.com/matheus06/gitops-helm.git
     targetRevision: master
