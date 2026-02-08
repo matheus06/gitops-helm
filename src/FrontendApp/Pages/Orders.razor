@@ -1,0 +1,252 @@
+@page "/orders"
+@inject IOrderService OrderService
+@inject IProductService ProductService
+
+<PageTitle>Orders - Microservices Dashboard</PageTitle>
+
+<h1>Orders</h1>
+
+<div class="mb-3">
+    <button class="btn btn-success" @onclick="ShowAddForm">+ Create Order</button>
+    <button class="btn btn-secondary ms-2" @onclick="LoadOrders">Refresh</button>
+</div>
+
+@if (showForm)
+{
+    <div class="card mb-4">
+        <div class="card-header">Create New Order</div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">Customer ID</label>
+                <input type="number" class="form-control" @bind="newOrder.CustomerId" />
+            </div>
+
+            <h6>Order Items</h6>
+            @foreach (var item in newOrder.Items)
+            {
+                <div class="row mb-2">
+                    <div class="col">
+                        <select class="form-select" @bind="item.ProductId">
+                            <option value="0">Select product...</option>
+                            @foreach (var product in products)
+                            {
+                                <option value="@product.Id">@product.Name ($@product.Price)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-3">
+                        <input type="number" class="form-control" placeholder="Qty" @bind="item.Quantity" />
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-danger btn-sm" @onclick="() => RemoveItem(item)">X</button>
+                    </div>
+                </div>
+            }
+            <button type="button" class="btn btn-outline-primary btn-sm mb-3" @onclick="AddItem">+ Add Item</button>
+
+            <div class="mt-3">
+                <button type="button" class="btn btn-primary" @onclick="CreateOrder">Create Order</button>
+                <button type="button" class="btn btn-secondary ms-2" @onclick="CancelCreate">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (loading)
+{
+    <p>Loading orders...</p>
+}
+else if (error != null)
+{
+    <div class="alert alert-danger">@error</div>
+}
+else if (orders.Count == 0)
+{
+    <p>No orders found.</p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Customer ID</th>
+                <th>Items</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var order in orders)
+            {
+                <tr>
+                    <td>@order.Id</td>
+                    <td>@order.CustomerId</td>
+                    <td>@order.Items.Count items</td>
+                    <td>
+                        <span class="badge @GetStatusBadgeClass(order.Status)">@order.Status</span>
+                    </td>
+                    <td>@order.CreatedAt.ToString("g")</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                                Update Status
+                            </button>
+                            <ul class="dropdown-menu">
+                                @foreach (OrderStatus status in Enum.GetValues<OrderStatus>())
+                                {
+                                    <li>
+                                        <button class="dropdown-item" @onclick="() => UpdateStatus(order.Id, status)">
+                                            @status
+                                        </button>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                        <button class="btn btn-sm btn-danger ms-1" @onclick="() => DeleteOrder(order.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (message != null)
+{
+    <div class="alert alert-info mt-3">@message</div>
+}
+
+@code {
+    private List<Order> orders = new();
+    private List<Product> products = new();
+    private bool loading = true;
+    private string? error;
+    private string? message;
+    private bool showForm = false;
+    private CreateOrderRequest newOrder = new() { Items = new List<OrderItem> { new() } };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrders();
+        products = await ProductService.GetProductsAsync();
+    }
+
+    private async Task LoadOrders()
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            orders = await OrderService.GetOrdersAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to load orders: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void ShowAddForm()
+    {
+        newOrder = new CreateOrderRequest { Items = new List<OrderItem> { new() } };
+        showForm = true;
+        message = null;
+    }
+
+    private void CancelCreate()
+    {
+        showForm = false;
+    }
+
+    private void AddItem()
+    {
+        newOrder.Items.Add(new OrderItem());
+    }
+
+    private void RemoveItem(OrderItem item)
+    {
+        newOrder.Items.Remove(item);
+        if (newOrder.Items.Count == 0)
+        {
+            newOrder.Items.Add(new OrderItem());
+        }
+    }
+
+    private async Task CreateOrder()
+    {
+        message = null;
+        error = null;
+
+        // Filter out invalid items
+        newOrder.Items = newOrder.Items.Where(i => i.ProductId > 0 && i.Quantity > 0).ToList();
+
+        if (newOrder.Items.Count == 0)
+        {
+            error = "Please add at least one item to the order.";
+            return;
+        }
+
+        try
+        {
+            var created = await OrderService.CreateOrderAsync(newOrder);
+            if (created != null)
+            {
+                message = $"Order #{created.Id} created successfully!";
+                showForm = false;
+                await LoadOrders();
+            }
+            else
+            {
+                error = "Failed to create order.";
+            }
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to create order: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateStatus(int orderId, OrderStatus status)
+    {
+        message = null;
+        var updated = await OrderService.UpdateOrderStatusAsync(orderId, status);
+        if (updated != null)
+        {
+            message = $"Order #{orderId} status updated to {status}";
+            await LoadOrders();
+        }
+        else
+        {
+            error = "Failed to update order status.";
+        }
+    }
+
+    private async Task DeleteOrder(int id)
+    {
+        message = null;
+        var success = await OrderService.DeleteOrderAsync(id);
+        if (success)
+        {
+            message = "Order deleted successfully!";
+            await LoadOrders();
+        }
+        else
+        {
+            error = "Failed to delete order.";
+        }
+    }
+
+    private string GetStatusBadgeClass(OrderStatus status) => status switch
+    {
+        OrderStatus.Pending => "bg-warning text-dark",
+        OrderStatus.Confirmed => "bg-info",
+        OrderStatus.Shipped => "bg-primary",
+        OrderStatus.Delivered => "bg-success",
+        OrderStatus.Cancelled => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "frontend-app.fullname" . }}-config
+  labels:
+    {{- include "frontend-app.labels" . | nindent 4 }}
+data:
+  appsettings.json: |
+    {
+      "ApiSettings": {
+        "ProductServiceUrl": "{{ .Values.apiSettings.productServiceUrl }}",
+        "OrderServiceUrl": "{{ .Values.apiSettings.orderServiceUrl }}"
+      }
+    }

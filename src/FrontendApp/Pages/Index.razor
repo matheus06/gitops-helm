@@ -1,0 +1,38 @@
+@page "/"
+
+<PageTitle>Home - Microservices Dashboard</PageTitle>
+
+<h1>Microservices Dashboard</h1>
+
+<p>Welcome to the GitOps Helm Lab frontend application.</p>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Products</h5>
+                <p class="card-text">Manage your product catalog. Add, edit, and delete products.</p>
+                <a href="products" class="btn btn-primary">Go to Products</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Orders</h5>
+                <p class="card-text">View and manage customer orders. Track order status.</p>
+                <a href="orders" class="btn btn-primary">Go to Orders</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <h3>Architecture</h3>
+    <p>This frontend connects to:</p>
+    <ul>
+        <li><strong>ProductService</strong> - REST API for product management</li>
+        <li><strong>OrderService</strong> - REST API for order management</li>
+        <li><strong>MongoDB</strong> - Persistent storage (via Vault dynamic credentials)</li>
+    </ul>
+</div>

@@ -10,9 +10,10 @@ A lab environment demonstrating GitOps with ArgoCD, Helm, and .NET microservices
 ├─────────────────────────────────────────────────────────────────────┤
 │  src/                    │  charts/              │  argocd/         │
 │  ├── ProductService/     │  ├── product-service/ │  ├── apps/       │
-│  └── OrderService/       │  ├── order-service/   │  │   ├── dev/    │
-│                          │  ├── mongodb/         │  │   ├── prod/   │
-│  .github/workflows/      │  └── vault/           │  │   └── ubuntu/ │
+│  ├── OrderService/       │  ├── order-service/   │  │   ├── dev/    │
+│  └── FrontendApp/        │  ├── frontend-app/    │  │   ├── prod/   │
+│                          │  ├── mongodb/         │  │   └── ubuntu/ │
+│  .github/workflows/      │  └── vault/           │                  │
 │                          │                       │  └── projects/   │
 │  infra/terraform/        │                       │                  │
 └─────────────────────────────────────────────────────────────────────┘
@@ -90,11 +91,16 @@ gitops-helm/
 │   │   ├── ProductService.csproj
 │   │   ├── Dockerfile
 │   │   └── appsettings.json
-│   └── OrderService/            # Order management microservice
+│   ├── OrderService/            # Order management microservice
+│   │   ├── Program.cs
+│   │   ├── OrderService.csproj
+│   │   ├── Dockerfile
+│   │   └── appsettings.json
+│   └── FrontendApp/             # Blazor WASM Dashboard
 │       ├── Program.cs
-│       ├── OrderService.csproj
+│       ├── FrontendApp.csproj
 │       ├── Dockerfile
-│       └── appsettings.json
+│       └── Pages/               # Razor pages (Index, Products, Orders)
 ├── charts/
 │   ├── product-service/         # Helm chart for ProductService
 │   │   ├── Chart.yaml
@@ -103,6 +109,7 @@ gitops-helm/
 │   │   ├── values-prod.yaml     # Prod environment overrides
 │   │   └── templates/
 │   ├── order-service/           # Helm chart for OrderService
+│   ├── frontend-app/            # Helm chart for Blazor WASM Frontend
 │   ├── mongodb/                 # Helm chart for MongoDB
 │   │   ├── Chart.yaml
 │   │   ├── values.yaml
@@ -122,6 +129,7 @@ gitops-helm/
 │   │   │   └── vault.yaml
 │   │   ├── prod/                # Prod environment apps
 │   │   ├── ubuntu/              # Ubuntu/MicroK8s environment apps
+│   │   │   └── frontend-app.yaml
 │   │   ├── app-of-apps-dev.yaml
 │   │   ├── app-of-apps-prod.yaml
 │   │   └── app-of-apps-ubuntu.yaml
@@ -171,6 +179,24 @@ gitops-helm/
 - `POST /api/orders` - Create order
 - `PUT /api/orders/{id}/status` - Update order status
 - `DELETE /api/orders/{id}` - Delete order
+
+### FrontendApp (Blazor WASM Dashboard)
+A web-based dashboard for managing products and orders through the microservice APIs.
+
+**Access via Ingress (Ubuntu/MicroK8s):**
+```bash
+# Add to /etc/hosts (Linux/macOS) or C:\Windows\System32\drivers\etc\hosts (Windows)
+<VM-IP> frontend.local product.local order.local
+
+# Access the dashboard
+http://frontend.local
+```
+
+**Access via Port Forward:**
+```bash
+kubectl port-forward svc/frontend-app-ubuntu -n microservices-ubuntu 8080:80
+# Access at http://localhost:8080
+```
 
 ## Local Development
 

@@ -13,6 +13,17 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
 
+// CORS for Blazor WASM frontend
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 var otelEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ?? "http://otel-collector:4317";
 var serviceName = "order-service";
 
@@ -66,6 +77,7 @@ builder.Logging.AddOpenTelemetry(logging =>
 var app = builder.Build();
 var logger = app.Logger;
 
+app.UseCors();
 app.UseSwagger();
 app.UseSwaggerUI();
 
